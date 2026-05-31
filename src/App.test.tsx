@@ -24,6 +24,23 @@ import type { DownloadTask } from "./types/download";
 
 const appCss = readFileSync("src/App.css", "utf8");
 
+function mockSystemTheme(matches: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 vi.mock("./api/appApi", () => ({
   createDownload: vi.fn(),
   getAppStatus: vi.fn(),
@@ -736,6 +753,64 @@ describe("App", () => {
     expect(footerActions).toContainElement(
       screen.getByRole("button", { name: "删除任务" }),
     );
+  });
+
+  it("starts in the light theme by default", () => {
+    render(<App initialTasks={[]} />);
+
+    const appShell = screen.getByLabelText("下载管理器应用");
+
+    expect(appShell).toHaveAttribute("data-theme", "light");
+    expect(screen.getByRole("button", { name: "切换深色主题" })).toBeInTheDocument();
+  });
+
+  it("toggles and persists the dark theme", async () => {
+    const user = userEvent.setup();
+    render(<App initialTasks={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "切换深色主题" }));
+
+    expect(screen.getByLabelText("下载管理器应用")).toHaveAttribute(
+      "data-theme",
+      "dark",
+    );
+    expect(window.localStorage.getItem("idm-desktop-theme")).toBe("dark");
+    expect(screen.getByRole("button", { name: "切换浅色主题" })).toBeInTheDocument();
+  });
+
+  it("lets settings switch appearance mode and accent color", async () => {
+    const user = userEvent.setup();
+    render(<App initialTasks={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    await user.click(screen.getByRole("tab", { name: "外观" }));
+    await user.click(screen.getByRole("button", { name: "深色" }));
+    await user.click(screen.getByRole("button", { name: "翡翠绿" }));
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    const appShell = screen.getByLabelText("下载管理器应用");
+
+    expect(appShell).toHaveAttribute("data-theme", "dark");
+    expect(appShell).toHaveAttribute("data-accent", "emerald");
+    expect(window.localStorage.getItem("idm-desktop-theme")).toBe("dark");
+    expect(window.localStorage.getItem("idm-desktop-accent")).toBe("emerald");
+  });
+
+  it("can follow the system dark theme from appearance settings", async () => {
+    mockSystemTheme(true);
+    const user = userEvent.setup();
+    render(<App initialTasks={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    await user.click(screen.getByRole("tab", { name: "外观" }));
+    await user.click(screen.getByRole("button", { name: "跟随系统" }));
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    expect(screen.getByLabelText("下载管理器应用")).toHaveAttribute(
+      "data-theme",
+      "dark",
+    );
+    expect(window.localStorage.getItem("idm-desktop-theme")).toBe("system");
   });
 
   it("uses the backend download list as the source of truth even when it is empty", async () => {

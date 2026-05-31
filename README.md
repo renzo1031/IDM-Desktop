@@ -1,5 +1,4 @@
 <p align="center">
-  <br />
   <h1 align="center">IDM Desktop</h1>
   <p align="center">
     一个内置 aria2 的紧凑型桌面下载管理器。
@@ -28,17 +27,12 @@
       <img src="https://img.shields.io/badge/1852568062%40qq.com-D14836?style=flat-square&logo=gmail&logoColor=white" alt="QQ 邮箱" />
     </a>
   </p>
+  <p align="center">
+    <img src="docs/assets/idm-desktop-preview.png" alt="IDM Desktop 界面预览" />
+  </p>
 </p>
 
 ---
-
-## 预览
-
-IDM Desktop 正在进行界面重设计。当前版本已经具备核心下载流程，等下一轮 UI 稳定后会在这里补充正式产品截图。
-
-```text
-新建任务 -> 链接预解析 -> 多线程下载 -> 队列管理 -> 文件操作
-```
 
 ## 为什么做这个项目
 

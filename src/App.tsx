@@ -2,11 +2,13 @@ import {
   Copy,
   FolderOpen,
   Info,
+  Moon,
   Pause,
   Play,
   Plus,
   RefreshCw,
   Settings,
+  Sun,
   Trash2,
   X,
 } from "lucide-react";
@@ -57,6 +59,12 @@ const initialAppStatus: AppStatus = {
 };
 
 const settingsStorageKey = "idm-desktop-settings";
+const themeStorageKey = "idm-desktop-theme";
+const accentStorageKey = "idm-desktop-accent";
+
+type AppTheme = "light" | "dark";
+type ThemePreference = "system" | AppTheme;
+type AccentTheme = "blue" | "emerald" | "amber" | "rose";
 
 const engineStatusLabel: Record<EngineStatus, string> = {
   bundled: "内置 aria2",
@@ -65,15 +73,65 @@ const engineStatusLabel: Record<EngineStatus, string> = {
   error: "aria2 异常",
 };
 
-type SettingsSection = "download" | "connection" | "proxy" | "file" | "advanced";
+type SettingsSection =
+  | "download"
+  | "connection"
+  | "proxy"
+  | "file"
+  | "appearance"
+  | "advanced";
 
 const settingsTabs: Array<{ key: SettingsSection; label: string }> = [
   { key: "download", label: "下载" },
   { key: "connection", label: "连接" },
   { key: "proxy", label: "代理" },
   { key: "file", label: "文件" },
+  { key: "appearance", label: "外观" },
   { key: "advanced", label: "高级" },
 ];
+
+const themeModeOptions: Array<{ value: ThemePreference; label: string }> = [
+  { value: "system", label: "跟随系统" },
+  { value: "light", label: "浅色" },
+  { value: "dark", label: "深色" },
+];
+
+const accentOptions: Array<{ value: AccentTheme; label: string }> = [
+  { value: "blue", label: "蓝色" },
+  { value: "emerald", label: "翡翠绿" },
+  { value: "amber", label: "琥珀橙" },
+  { value: "rose", label: "玫瑰红" },
+];
+
+function getSystemTheme(): AppTheme {
+  try {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function loadSavedThemePreference(): ThemePreference {
+  try {
+    const savedTheme = window.localStorage.getItem(themeStorageKey);
+    return savedTheme === "system" || savedTheme === "dark" ? savedTheme : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function loadSavedAccent(): AccentTheme {
+  try {
+    const savedAccent = window.localStorage.getItem(accentStorageKey);
+    return accentOptions.some((option) => option.value === savedAccent)
+      ? (savedAccent as AccentTheme)
+      : "blue";
+  } catch {
+    return "blue";
+  }
+}
 
 function progressOf(task: DownloadTask): number {
   if (task.totalBytes <= 0) {
@@ -167,6 +225,11 @@ type ContextMenuState =
     };
 
 function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
+  const [themePreference, setThemePreference] = useState<ThemePreference>(
+    loadSavedThemePreference,
+  );
+  const [systemTheme, setSystemTheme] = useState<AppTheme>(getSystemTheme);
+  const [accentTheme, setAccentTheme] = useState<AccentTheme>(loadSavedAccent);
   const [category, setCategory] = useState<TaskCategory>("all");
   const [tasksState, setTasksState] = useState<DownloadTask[]>(initialTasks);
   const [selectedTaskId, setSelectedTaskId] = useState(initialTasks[0]?.id ?? "");
@@ -193,6 +256,8 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     maxActiveDownloads: String(downloadSettings.maxActiveDownloads),
     proxyEnabled: downloadSettings.proxyUrl.length > 0,
     proxyUrl: downloadSettings.proxyUrl,
+    themePreference,
+    accentTheme,
   }));
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [deletePromptTaskId, setDeletePromptTaskId] = useState("");
@@ -204,6 +269,7 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     [tasksState],
   );
   const selectedTask = tasksState.find((task) => task.id === selectedTaskId) ?? tasksState[0];
+  const resolvedTheme = themePreference === "system" ? systemTheme : themePreference;
   const contextMenuTask =
     contextMenu?.kind === "task"
       ? tasksState.find((task) => task.id === contextMenu.taskId)
@@ -213,6 +279,25 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
   const propertyRemainingBytes = propertyTask
     ? propertyTask.totalBytes - propertyTask.completedBytes
     : 0;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+
+    if (!mediaQuery) {
+      return;
+    }
+
+    function syncSystemTheme(event: MediaQueryList | MediaQueryListEvent) {
+      setSystemTheme(event.matches ? "dark" : "light");
+    }
+
+    syncSystemTheme(mediaQuery);
+    mediaQuery.addEventListener?.("change", syncSystemTheme);
+
+    return () => {
+      mediaQuery.removeEventListener?.("change", syncSystemTheme);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -714,6 +799,8 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
       maxActiveDownloads: String(downloadSettings.maxActiveDownloads),
       proxyEnabled: downloadSettings.proxyUrl.length > 0,
       proxyUrl: downloadSettings.proxyUrl,
+      themePreference,
+      accentTheme,
     });
     setSettingsSection("download");
     setSettingsOpen(true);
@@ -730,7 +817,11 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     try {
       await updateQueueSettings({ maxActiveDownloads: nextSettings.maxActiveDownloads });
       window.localStorage.setItem(settingsStorageKey, JSON.stringify(nextSettings));
+      window.localStorage.setItem(themeStorageKey, settingsDraft.themePreference);
+      window.localStorage.setItem(accentStorageKey, settingsDraft.accentTheme);
       setDownloadSettings(nextSettings);
+      setThemePreference(settingsDraft.themePreference);
+      setAccentTheme(settingsDraft.accentTheme);
       setAppStatus((status) => ({
         ...status,
         maxActiveDownloads: nextSettings.maxActiveDownloads,
@@ -741,6 +832,8 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
         maxActiveDownloads: String(nextSettings.maxActiveDownloads),
         proxyEnabled: nextSettings.proxyUrl.length > 0,
         proxyUrl: nextSettings.proxyUrl,
+        themePreference: settingsDraft.themePreference,
+        accentTheme: settingsDraft.accentTheme,
       });
       setTaskDraft((current) => ({
         ...current,
@@ -785,8 +878,22 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     }
   }
 
+  function toggleTheme() {
+    setThemePreference(() => {
+      const nextTheme = resolvedTheme === "dark" ? "light" : "dark";
+      window.localStorage.setItem(themeStorageKey, nextTheme);
+      setSettingsDraft((current) => ({ ...current, themePreference: nextTheme }));
+      return nextTheme;
+    });
+  }
+
   return (
-    <main className="app-shell">
+    <main
+      aria-label="下载管理器应用"
+      className="app-shell"
+      data-accent={accentTheme}
+      data-theme={resolvedTheme}
+    >
       <section
         className="download-window"
         aria-label="下载管理器主窗口"
@@ -976,6 +1083,14 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
             {downloadSettings.proxyUrl ? "代理已启用" : "直连"} · 剩余 428 GB
           </span>
           <div className="status-actions" aria-label="底部操作">
+            <button
+              aria-label={resolvedTheme === "dark" ? "切换浅色主题" : "切换深色主题"}
+              onClick={toggleTheme}
+              title={resolvedTheme === "dark" ? "切换浅色主题" : "切换深色主题"}
+              type="button"
+            >
+              {resolvedTheme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
             <button
               aria-expanded={settingsOpen}
               aria-label="设置"
@@ -1535,6 +1650,65 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
                       <div className="setting-card">
                         <span>重复文件</span>
                         <strong>自动重命名</strong>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {settingsSection === "appearance" ? (
+                    <div className="settings-page">
+                      <div className="setting-group">
+                        <span>外观模式</span>
+                        <div className="mode-choices" aria-label="外观模式">
+                          {themeModeOptions.map((option) => (
+                            <button
+                              aria-pressed={
+                                settingsDraft.themePreference === option.value
+                              }
+                              className={
+                                settingsDraft.themePreference === option.value
+                                  ? "active"
+                                  : ""
+                              }
+                              key={option.value}
+                              onClick={() =>
+                                setSettingsDraft((current) => ({
+                                  ...current,
+                                  themePreference: option.value,
+                                }))
+                              }
+                              type="button"
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="setting-group">
+                        <span>主题色</span>
+                        <div className="accent-choices" aria-label="主题色">
+                          {accentOptions.map((option) => (
+                            <button
+                              aria-pressed={settingsDraft.accentTheme === option.value}
+                              className={
+                                settingsDraft.accentTheme === option.value
+                                  ? "active"
+                                  : ""
+                              }
+                              data-accent-choice={option.value}
+                              key={option.value}
+                              onClick={() =>
+                                setSettingsDraft((current) => ({
+                                  ...current,
+                                  accentTheme: option.value,
+                                }))
+                              }
+                              type="button"
+                            >
+                              <span aria-hidden="true" />
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ) : null}
