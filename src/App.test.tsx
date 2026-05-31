@@ -10,6 +10,7 @@ import {
   openDownloadFile,
   pauseDownload,
   removeDownload,
+  retryDownload,
 } from "./api/appApi";
 import type { DownloadTask } from "./types/download";
 
@@ -21,6 +22,7 @@ vi.mock("./api/appApi", () => ({
   openDownloadFile: vi.fn(),
   pauseDownload: vi.fn(),
   removeDownload: vi.fn(),
+  retryDownload: vi.fn(),
   resumeDownload: vi.fn(),
 }));
 
@@ -66,6 +68,7 @@ describe("App", () => {
     vi.mocked(openDownloadFile).mockResolvedValue();
     vi.mocked(openDownloadDir).mockResolvedValue();
     vi.mocked(removeDownload).mockResolvedValue();
+    vi.mocked(retryDownload).mockResolvedValue(createdTask);
   });
 
   it("renders the 980px three-column downloader shell", async () => {
@@ -173,5 +176,36 @@ describe("App", () => {
 
     await user.click(within(detailsPanel).getByRole("button", { name: "删文件" }));
     expect(removeDownload).toHaveBeenCalledWith("gid-1", { deleteFile: true });
+  });
+
+  it("retries an errored task and selects the recreated download", async () => {
+    const user = userEvent.setup();
+    const failedTask: DownloadTask = {
+      ...createdTask,
+      id: "failed-gid",
+      gid: "failed-gid",
+      status: "error",
+      completedBytes: 512,
+      errorMessage: "网络中断",
+    };
+    const retriedTask: DownloadTask = {
+      ...createdTask,
+      id: "retry-gid",
+      gid: "retry-gid",
+      fileName: "retried-file.zip",
+      status: "waiting",
+    };
+    vi.mocked(listDownloads).mockResolvedValue([failedTask]);
+    vi.mocked(retryDownload).mockResolvedValue(retriedTask);
+
+    render(<App initialTasks={[]} />);
+
+    expect(await screen.findByText("网络中断")).toBeInTheDocument();
+    const detailsPanel = screen.getByLabelText("任务详情面板");
+
+    await user.click(within(detailsPanel).getByRole("button", { name: "重试" }));
+
+    expect(retryDownload).toHaveBeenCalledWith("failed-gid");
+    expect(await screen.findAllByText("retried-file.zip")).not.toHaveLength(0);
   });
 });

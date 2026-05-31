@@ -150,3 +150,21 @@ export async function openDownloadDir(gid: string): Promise<void> {
 
   return invoke<void>("open_download_dir", { gid });
 }
+
+export async function retryDownload(gid: string): Promise<DownloadTask> {
+  if (!isTauriRuntime()) {
+    const task = fallbackDownloads.find((item) => item.gid === gid || item.id === gid);
+    if (!task) {
+      throw new Error("任务不存在");
+    }
+
+    return createDownload({
+      url: task.url,
+      saveDir: task.saveDir,
+      fileName: task.fileName,
+      split: task.options.split,
+    });
+  }
+
+  return invoke<DownloadTask>("retry_download", { gid });
+}

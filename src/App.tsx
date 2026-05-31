@@ -17,6 +17,7 @@ import {
   openDownloadFile,
   pauseDownload,
   removeDownload,
+  retryDownload,
   resumeDownload,
 } from "./api/appApi";
 import type { AppStatus, EngineStatus } from "./types/appStatus";
@@ -313,6 +314,24 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
     }
   }
 
+  async function handleRetryTask(task: DownloadTask) {
+    if (!task.gid) {
+      return;
+    }
+
+    try {
+      const retriedTask = await retryDownload(task.gid);
+      setTasksState((current) => [
+        retriedTask,
+        ...current.filter((item) => item.id !== retriedTask.id),
+      ]);
+      setSelectedTaskId(retriedTask.id);
+      setErrorMessage("");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="download-window" aria-label="下载管理器主窗口">
@@ -471,7 +490,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
                 <Pause size={15} />
                 {selectedTask.status === "paused" ? "继续" : "暂停"}
               </button>
-              <button type="button">
+              <button onClick={() => handleRetryTask(selectedTask)} type="button">
                 <RefreshCw size={15} />
                 重试
               </button>

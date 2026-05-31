@@ -36,6 +36,7 @@ pub fn run() {
             commands::app_status,
             commands::list_downloads,
             commands::create_download,
+            commands::retry_download,
             commands::pause_download,
             commands::resume_download,
             commands::remove_download,

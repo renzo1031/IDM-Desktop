@@ -81,6 +81,15 @@ pub fn build_create_download_request(
     })
 }
 
+pub fn retry_input_from_task(task: &crate::models::DownloadTask) -> CreateDownloadInput {
+    CreateDownloadInput {
+        url: task.url.clone(),
+        save_dir: task.save_dir.clone(),
+        file_name: Some(task.file_name.clone()),
+        split: Some(task.options.split),
+    }
+}
+
 #[cfg_attr(not(test), tauri::command)]
 #[cfg(not(test))]
 pub fn app_status(app: tauri::AppHandle) -> AppStatus {
@@ -111,6 +120,19 @@ pub async fn create_download(
     let request = build_create_download_request(&input, service.config())?;
     let gid = service.add_uri(&request.url, &request.options).await?;
     service.tell_status(&gid).await
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+pub async fn retry_download(
+    gid: String,
+    service: State<'_, DownloadService>,
+) -> Result<DownloadTask, String> {
+    let task = service.stored_task(&gid)?;
+    let input = retry_input_from_task(&task);
+    let request = build_create_download_request(&input, service.config())?;
+    let next_gid = service.add_uri(&request.url, &request.options).await?;
+    service.tell_status(&next_gid).await
 }
 
 #[cfg(not(test))]
@@ -225,5 +247,37 @@ mod tests {
         assert_eq!(request.options.dir, "D:\\Downloads");
         assert_eq!(request.options.split, "16");
         assert_eq!(request.options.continue_download, "true");
+    }
+
+    #[test]
+    fn retry_download_input_reuses_existing_task_metadata() {
+        let task = crate::models::DownloadTask {
+            id: "gid-1".to_string(),
+            gid: Some("gid-1".to_string()),
+            url: "https://example.com/archive.zip".to_string(),
+            file_name: "archive.zip".to_string(),
+            save_dir: "D:\\Downloads".to_string(),
+            total_bytes: 100,
+            completed_bytes: 40,
+            download_speed: 0,
+            connections: 0,
+            status: crate::models::DownloadStatus::Error,
+            resumable: true,
+            error_message: Some("网络中断".to_string()),
+            created_at: "2026-05-31T00:00:00.000Z".to_string(),
+            updated_at: "2026-05-31T00:00:00.000Z".to_string(),
+            options: crate::models::DownloadTaskOptions {
+                split: 8,
+                max_connection_per_server: 8,
+                speed_limit: 0,
+            },
+        };
+
+        let input = retry_input_from_task(&task);
+
+        assert_eq!(input.url, "https://example.com/archive.zip");
+        assert_eq!(input.save_dir, "D:\\Downloads");
+        assert_eq!(input.file_name, Some("archive.zip".to_string()));
+        assert_eq!(input.split, Some(8));
     }
 }

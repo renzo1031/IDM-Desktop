@@ -166,21 +166,20 @@ impl DownloadService {
     }
 
     pub fn download_file_path(&self, id: &str) -> Result<PathBuf, String> {
-        let task = self
-            .inner
-            .store
-            .find(id)?
-            .ok_or_else(|| "任务不存在".to_string())?;
+        let task = self.stored_task(id)?;
         Ok(download_file_path_from_task(&task))
     }
 
     pub fn download_dir_path(&self, id: &str) -> Result<PathBuf, String> {
-        let task = self
-            .inner
+        let task = self.stored_task(id)?;
+        Ok(PathBuf::from(task.save_dir))
+    }
+
+    pub fn stored_task(&self, id: &str) -> Result<DownloadTask, String> {
+        self.inner
             .store
             .find(id)?
-            .ok_or_else(|| "任务不存在".to_string())?;
-        Ok(PathBuf::from(task.save_dir))
+            .ok_or_else(|| "任务不存在".to_string())
     }
 
     pub fn delete_download_file(&self, id: &str) -> Result<(), String> {

@@ -8,6 +8,7 @@ import {
   pauseDownload,
   removeDownload,
   resetFallbackDownloadsForTest,
+  retryDownload,
   resumeDownload,
 } from "./appApi";
 
@@ -59,5 +60,24 @@ describe("appApi", () => {
 
     await removeDownload(task.gid!, { deleteFile: true });
     await expect(listDownloads()).resolves.toEqual([]);
+  });
+
+  it("retries fallback downloads by cloning their saved metadata", async () => {
+    const failedTask = await createDownload({
+      url: "https://example.com/retry.zip",
+      saveDir: "D:\\Downloads",
+      fileName: "retry.zip",
+      split: 10,
+    });
+    await pauseDownload(failedTask.gid!);
+
+    const retriedTask = await retryDownload(failedTask.gid!);
+
+    expect(retriedTask.id).not.toBe(failedTask.id);
+    expect(retriedTask.url).toBe(failedTask.url);
+    expect(retriedTask.fileName).toBe(failedTask.fileName);
+    expect(retriedTask.saveDir).toBe(failedTask.saveDir);
+    expect(retriedTask.options.split).toBe(10);
+    expect(retriedTask.status).toBe("waiting");
   });
 });
