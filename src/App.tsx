@@ -128,9 +128,10 @@ function progressOf(task: DownloadTask): number {
 
 interface AppProps {
   initialTasks?: DownloadTask[];
+  pollIntervalMs?: number;
 }
 
-function App({ initialTasks = sampleTasks }: AppProps) {
+function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
   const [category, setCategory] = useState<TaskCategory>("all");
   const [url, setUrl] = useState("");
   const [tasksState, setTasksState] = useState<DownloadTask[]>(initialTasks);
@@ -168,33 +169,46 @@ function App({ initialTasks = sampleTasks }: AppProps) {
     };
   }, []);
 
-  useEffect(() => {
-    let alive = true;
+  function applyDownloads(downloads: DownloadTask[]) {
+    setTasksState(downloads);
+    setSelectedTaskId((currentSelectedId) => {
+      if (downloads.some((task) => task.id === currentSelectedId)) {
+        return currentSelectedId;
+      }
 
-    listDownloads()
-      .then((downloads) => {
-        if (alive && downloads.length > 0) {
-          setTasksState(downloads);
-          setSelectedTaskId(downloads[0].id);
-        }
-      })
-      .catch((error) => {
-        if (alive) {
-          setErrorMessage(error instanceof Error ? error.message : String(error));
-        }
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
+      return downloads[0]?.id ?? "";
+    });
+  }
 
   async function refreshDownloads() {
     const downloads = await listDownloads();
-    if (downloads.length > 0) {
-      setTasksState(downloads);
-    }
+    applyDownloads(downloads);
   }
+
+  useEffect(() => {
+    let alive = true;
+
+    async function syncDownloads() {
+      try {
+        const downloads = await listDownloads();
+        if (alive) {
+          applyDownloads(downloads);
+        }
+      } catch (error) {
+        if (alive) {
+          setErrorMessage(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    syncDownloads();
+    const intervalId = window.setInterval(syncDownloads, pollIntervalMs);
+
+    return () => {
+      alive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [pollIntervalMs]);
 
   async function handleCreateDownload() {
     const nextUrl = url.trim();

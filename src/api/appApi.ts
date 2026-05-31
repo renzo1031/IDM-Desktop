@@ -8,8 +8,29 @@ const fallbackStatus: AppStatus = {
   defaultSplit: 16,
 };
 
+let fallbackDownloads: DownloadTask[] = [];
+let fallbackDownloadId = 0;
+
+function isTauriRuntime(): boolean {
+  return "__TAURI_INTERNALS__" in window;
+}
+
+function updateFallbackDownload(
+  gid: string,
+  update: (task: DownloadTask) => DownloadTask,
+): void {
+  fallbackDownloads = fallbackDownloads.map((task) =>
+    task.gid === gid ? update(task) : task,
+  );
+}
+
+export function resetFallbackDownloadsForTest(): void {
+  fallbackDownloads = [];
+  fallbackDownloadId = 0;
+}
+
 export async function getAppStatus(): Promise<AppStatus> {
-  if (!("__TAURI_INTERNALS__" in window)) {
+  if (!isTauriRuntime()) {
     return fallbackStatus;
   }
 
@@ -24,22 +45,24 @@ export interface CreateDownloadInput {
 }
 
 export async function listDownloads(): Promise<DownloadTask[]> {
-  if (!("__TAURI_INTERNALS__" in window)) {
-    return [];
+  if (!isTauriRuntime()) {
+    return [...fallbackDownloads];
   }
 
   return invoke<DownloadTask[]>("list_downloads");
 }
 
 export async function createDownload(input: CreateDownloadInput): Promise<DownloadTask> {
-  if (!("__TAURI_INTERNALS__" in window)) {
+  if (!isTauriRuntime()) {
     const now = new Date().toISOString();
     const urlParts = input.url.split("/").filter(Boolean);
     const fallbackName = input.fileName ?? urlParts[urlParts.length - 1] ?? "download.bin";
+    fallbackDownloadId += 1;
+    const gid = `mock-${fallbackDownloadId}`;
 
-    return {
-      id: `mock-${Date.now()}`,
-      gid: `mock-${Date.now()}`,
+    const task: DownloadTask = {
+      id: gid,
+      gid,
       url: input.url,
       fileName: fallbackName,
       saveDir: input.saveDir,
@@ -57,13 +80,22 @@ export async function createDownload(input: CreateDownloadInput): Promise<Downlo
         speedLimit: 0,
       },
     };
+    fallbackDownloads = [task, ...fallbackDownloads];
+
+    return task;
   }
 
   return invoke<DownloadTask>("create_download", { input });
 }
 
 export async function pauseDownload(gid: string): Promise<void> {
-  if (!("__TAURI_INTERNALS__" in window)) {
+  if (!isTauriRuntime()) {
+    updateFallbackDownload(gid, (task) => ({
+      ...task,
+      downloadSpeed: 0,
+      status: "paused",
+      updatedAt: new Date().toISOString(),
+    }));
     return;
   }
 
@@ -71,7 +103,12 @@ export async function pauseDownload(gid: string): Promise<void> {
 }
 
 export async function resumeDownload(gid: string): Promise<void> {
-  if (!("__TAURI_INTERNALS__" in window)) {
+  if (!isTauriRuntime()) {
+    updateFallbackDownload(gid, (task) => ({
+      ...task,
+      status: "active",
+      updatedAt: new Date().toISOString(),
+    }));
     return;
   }
 
@@ -79,7 +116,8 @@ export async function resumeDownload(gid: string): Promise<void> {
 }
 
 export async function removeDownload(gid: string): Promise<void> {
-  if (!("__TAURI_INTERNALS__" in window)) {
+  if (!isTauriRuntime()) {
+    fallbackDownloads = fallbackDownloads.filter((task) => task.gid !== gid);
     return;
   }
 

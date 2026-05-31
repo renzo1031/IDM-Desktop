@@ -36,6 +36,17 @@ const createdTask: DownloadTask = {
   options: { split: 16, maxConnectionPerServer: 16, speedLimit: 0 },
 };
 
+const pollingTask: DownloadTask = {
+  ...createdTask,
+  id: "polling-gid",
+  gid: "polling-gid",
+  url: "https://example.com/polling.zip",
+  fileName: "polling.zip",
+  totalBytes: 2048,
+  completedBytes: 0,
+  status: "active",
+};
+
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -50,9 +61,12 @@ describe("App", () => {
   });
 
   it("renders the 980px three-column downloader shell", async () => {
+    vi.mocked(listDownloads).mockResolvedValue([createdTask]);
+
     render(<App />);
 
     expect(await screen.findByText("IDM Desktop")).toBeInTheDocument();
+    expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
     expect(screen.getByPlaceholderText("粘贴下载链接...")).toBeInTheDocument();
     expect(screen.getByText("全部")).toBeInTheDocument();
     expect(screen.getByText("下载中")).toBeInTheDocument();
@@ -79,12 +93,15 @@ describe("App", () => {
 
   it("pauses the selected task through the backend command", async () => {
     const user = userEvent.setup();
+    vi.mocked(listDownloads).mockResolvedValue([createdTask]);
+
     render(<App />);
 
+    expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
     const detailsPanel = screen.getByLabelText("任务详情面板");
     await user.click(within(detailsPanel).getByRole("button", { name: /^暂停$/ }));
 
-    expect(pauseDownload).toHaveBeenCalledWith("9bfa1a");
+    expect(pauseDownload).toHaveBeenCalledWith("gid-1");
   });
 
   it("keeps the shell usable when there are no restored downloads", async () => {
@@ -94,5 +111,35 @@ describe("App", () => {
 
     expect(await screen.findByText("暂无任务")).toBeInTheDocument();
     expect(screen.getByText("等待新建下载任务")).toBeInTheDocument();
+  });
+
+  it("uses the backend download list as the source of truth even when it is empty", async () => {
+    vi.mocked(listDownloads).mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findByText("暂无任务")).toBeInTheDocument();
+    expect(screen.queryByText("ubuntu-26.04-desktop-amd64.iso")).not.toBeInTheDocument();
+  });
+
+  it("polls backend downloads and refreshes visible progress", async () => {
+    vi.mocked(listDownloads)
+      .mockResolvedValueOnce([pollingTask])
+      .mockResolvedValue([
+        {
+          ...pollingTask,
+          completedBytes: 1024,
+          downloadSpeed: 512,
+          connections: 4,
+        },
+      ]);
+
+    render(<App initialTasks={[]} pollIntervalMs={20} />);
+
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    expect(await within(taskPanel).findByText("polling.zip")).toBeInTheDocument();
+    expect(within(taskPanel).getByText("0%")).toBeInTheDocument();
+    expect(await within(taskPanel).findByText("50%")).toBeInTheDocument();
+    expect(listDownloads).toHaveBeenCalledTimes(2);
   });
 });

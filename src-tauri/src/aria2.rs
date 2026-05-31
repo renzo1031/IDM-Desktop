@@ -234,6 +234,17 @@ pub fn build_remove_payload(gid: &str, config: &Aria2Config) -> Value {
     build_gid_payload("remove", "aria2.remove", gid, config)
 }
 
+pub fn build_shutdown_payload(config: &Aria2Config) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": "shutdown",
+        "method": "aria2.shutdown",
+        "params": [
+            token(config)
+        ]
+    })
+}
+
 pub fn build_tell_status_payload(gid: &str, config: &Aria2Config) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -295,6 +306,16 @@ fn map_status(status: &str) -> DownloadStatus {
     }
 }
 
+fn normalize_error_message(error_message: Option<String>) -> (Option<String>, bool) {
+    match error_message {
+        Some(message) if message.to_ascii_lowercase().contains("invalid range header") => (
+            Some("服务器不支持断点续传，请降低线程数或重新下载".to_string()),
+            false,
+        ),
+        other => (other, true),
+    }
+}
+
 impl Aria2TaskStatus {
     pub fn into_download_task(self) -> DownloadTask {
         let file_path = self
@@ -306,6 +327,7 @@ impl Aria2TaskStatus {
         let url = first_uri(&self.files);
         let status = map_status(&self.status);
         let now = "1970-01-01T00:00:00.000Z".to_string();
+        let (error_message, resumable) = normalize_error_message(self.error_message);
 
         DownloadTask {
             id: self.gid.clone(),
@@ -318,8 +340,8 @@ impl Aria2TaskStatus {
             download_speed: parse_u64(&self.download_speed),
             connections: parse_u32(&self.connections),
             status,
-            resumable: true,
-            error_message: self.error_message,
+            resumable,
+            error_message,
             created_at: now.clone(),
             updated_at: now,
             options: DownloadTaskOptions {
@@ -465,6 +487,14 @@ mod tests {
     }
 
     #[test]
+    fn shutdown_payload_uses_token_authenticated_method() {
+        let payload = build_shutdown_payload(&Aria2Config::default());
+
+        assert_eq!(payload["method"], "aria2.shutdown");
+        assert_eq!(payload["params"][0], "token:idm-local-secret");
+    }
+
+    #[test]
     fn aria2_status_maps_to_download_task() {
         let status: Aria2TaskStatus = serde_json::from_value(json!({
             "gid": "abc123",
@@ -496,5 +526,36 @@ mod tests {
         assert_eq!(task.connections, 8);
         assert_eq!(task.status, crate::models::DownloadStatus::Active);
         assert!(task.resumable);
+    }
+
+    #[test]
+    fn invalid_range_error_marks_task_as_not_resumable() {
+        let status: Aria2TaskStatus = serde_json::from_value(json!({
+            "gid": "range-error",
+            "status": "error",
+            "totalLength": "4194304",
+            "completedLength": "294912",
+            "downloadSpeed": "0",
+            "connections": "0",
+            "dir": "D:\\Downloads",
+            "errorMessage": "Invalid range header. Request: 294912-4194303/4194304, Response: 0-4194303/4194304",
+            "files": [{
+                "path": "D:\\Downloads\\big.bin",
+                "uris": [{
+                    "uri": "http://127.0.0.1/big.bin",
+                    "status": "used"
+                }]
+            }]
+        }))
+        .unwrap();
+
+        let task = status.into_download_task();
+
+        assert_eq!(task.status, crate::models::DownloadStatus::Error);
+        assert!(!task.resumable);
+        assert_eq!(
+            task.error_message,
+            Some("服务器不支持断点续传，请降低线程数或重新下载".to_string())
+        );
     }
 }

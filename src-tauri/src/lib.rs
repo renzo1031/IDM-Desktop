@@ -24,6 +24,14 @@ pub fn run() {
             ));
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                let service = window.state::<DownloadService>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    service.shutdown().await;
+                });
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::app_status,
             commands::list_downloads,

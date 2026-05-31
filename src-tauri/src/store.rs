@@ -1,4 +1,4 @@
-use crate::models::DownloadTask;
+use crate::models::{DownloadStatus, DownloadTask};
 use std::path::PathBuf;
 
 #[derive(Clone)]
@@ -50,6 +50,23 @@ impl TaskStore {
             .collect::<Vec<_>>();
         self.save_all(&tasks)
     }
+
+    pub fn update_status(
+        &self,
+        gid: &str,
+        status: DownloadStatus,
+        download_speed: u64,
+    ) -> Result<(), String> {
+        let mut tasks = self.load_all()?;
+        for task in &mut tasks {
+            if task.id == gid || task.gid.as_deref() == Some(gid) {
+                task.status = status.clone();
+                task.download_speed = download_speed;
+            }
+        }
+
+        self.save_all(&tasks)
+    }
 }
 
 #[cfg(test)]
@@ -92,6 +109,24 @@ mod tests {
 
         store.remove("gid-1").unwrap();
         assert!(store.load_all().unwrap().is_empty());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn store_updates_task_status_by_gid() {
+        let root = std::env::temp_dir().join(format!("idm-store-test-{}", uuid::Uuid::new_v4()));
+        let store = TaskStore::new(root.join("tasks.json"));
+
+        store.upsert(sample_task("gid-1")).unwrap();
+        store
+            .update_status("gid-1", DownloadStatus::Paused, 0)
+            .unwrap();
+
+        let tasks = store.load_all().unwrap();
+
+        assert_eq!(tasks[0].status, DownloadStatus::Paused);
+        assert_eq!(tasks[0].download_speed, 0);
 
         std::fs::remove_dir_all(root).unwrap();
     }

@@ -1,8 +1,9 @@
 use crate::aria2::{
     build_add_uri_payload, build_pause_payload, build_remove_payload, build_resume_payload,
-    build_tell_status_payload, prepare_launch_plan, AddUriOptions, Aria2Config, Aria2TaskStatus,
+    build_shutdown_payload, build_tell_status_payload, prepare_launch_plan, AddUriOptions,
+    Aria2Config, Aria2TaskStatus,
 };
-use crate::models::DownloadTask;
+use crate::models::{DownloadStatus, DownloadTask};
 use crate::store::TaskStore;
 use reqwest::Client;
 use serde::Deserialize;
@@ -139,15 +140,15 @@ impl DownloadService {
     pub async fn pause(&self, gid: &str) -> Result<(), String> {
         self.ensure_started().await?;
         self.rpc::<String>(build_pause_payload(gid, &self.inner.config))
-            .await
-            .map(|_| ())
+            .await?;
+        self.inner.store.update_status(gid, DownloadStatus::Paused, 0)
     }
 
     pub async fn resume(&self, gid: &str) -> Result<(), String> {
         self.ensure_started().await?;
         self.rpc::<String>(build_resume_payload(gid, &self.inner.config))
-            .await
-            .map(|_| ())
+            .await?;
+        self.inner.store.update_status(gid, DownloadStatus::Active, 0)
     }
 
     pub async fn remove(&self, gid: &str) -> Result<(), String> {
@@ -167,6 +168,15 @@ impl DownloadService {
 
     pub fn config(&self) -> &Aria2Config {
         &self.inner.config
+    }
+
+    pub async fn shutdown(&self) {
+        let _ = self.rpc::<String>(build_shutdown_payload(&self.inner.config)).await;
+        let mut child_guard = self.inner.child.lock().await;
+        if let Some(child) = child_guard.as_mut() {
+            let _ = child.start_kill();
+        }
+        *child_guard = None;
     }
 
     async fn rpc_ready(&self) -> bool {
