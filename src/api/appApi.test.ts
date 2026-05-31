@@ -3,6 +3,8 @@ import {
   createDownload,
   getAppStatus,
   listDownloads,
+  openDownloadDir,
+  openDownloadFile,
   pauseDownload,
   removeDownload,
   resetFallbackDownloadsForTest,
@@ -52,7 +54,10 @@ describe("appApi", () => {
     await resumeDownload(task.gid!);
     await expect(listDownloads()).resolves.toMatchObject([{ status: "active" }]);
 
-    await removeDownload(task.gid!);
+    await openDownloadFile(task.gid!);
+    await openDownloadDir(task.gid!);
+
+    await removeDownload(task.gid!, { deleteFile: true });
     await expect(listDownloads()).resolves.toEqual([]);
   });
 });

@@ -131,6 +131,32 @@ pub async fn remove_download(gid: String, service: State<'_, DownloadService>) -
     service.remove(&gid).await
 }
 
+#[cfg(not(test))]
+#[tauri::command]
+pub async fn remove_download_with_file(
+    gid: String,
+    delete_file: bool,
+    service: State<'_, DownloadService>,
+) -> Result<(), String> {
+    service.remove_with_file(&gid, delete_file).await
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+pub fn open_download_file(gid: String, service: State<'_, DownloadService>) -> Result<(), String> {
+    let file_path = service.download_file_path(&gid)?;
+    tauri_plugin_opener::open_path(&file_path, None::<&str>)
+        .map_err(|err| format!("无法打开文件 {}：{err}", file_path.display()))
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+pub fn open_download_dir(gid: String, service: State<'_, DownloadService>) -> Result<(), String> {
+    let dir_path = service.download_dir_path(&gid)?;
+    tauri_plugin_opener::open_path(&dir_path, None::<&str>)
+        .map_err(|err| format!("无法打开目录 {}：{err}", dir_path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

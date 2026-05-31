@@ -152,10 +152,40 @@ impl DownloadService {
     }
 
     pub async fn remove(&self, gid: &str) -> Result<(), String> {
+        self.remove_with_file(gid, false).await
+    }
+
+    pub async fn remove_with_file(&self, gid: &str, delete_file: bool) -> Result<(), String> {
         self.ensure_started().await?;
         self.rpc::<String>(build_remove_payload(gid, &self.inner.config))
             .await?;
+        if delete_file {
+            self.delete_download_file(gid)?;
+        }
         self.inner.store.remove(gid)
+    }
+
+    pub fn download_file_path(&self, id: &str) -> Result<PathBuf, String> {
+        let task = self
+            .inner
+            .store
+            .find(id)?
+            .ok_or_else(|| "任务不存在".to_string())?;
+        Ok(download_file_path_from_task(&task))
+    }
+
+    pub fn download_dir_path(&self, id: &str) -> Result<PathBuf, String> {
+        let task = self
+            .inner
+            .store
+            .find(id)?
+            .ok_or_else(|| "任务不存在".to_string())?;
+        Ok(PathBuf::from(task.save_dir))
+    }
+
+    pub fn delete_download_file(&self, id: &str) -> Result<(), String> {
+        let file_path = self.download_file_path(id)?;
+        delete_file_if_present(&file_path)
     }
 
     pub async fn tell_status(&self, gid: &str) -> Result<DownloadTask, String> {
@@ -254,5 +284,83 @@ impl DownloadService {
             "method": method,
             "params": params
         })
+    }
+}
+
+pub fn download_file_path_from_task(task: &DownloadTask) -> PathBuf {
+    PathBuf::from(&task.save_dir).join(&task.file_name)
+}
+
+pub fn delete_file_if_present(file_path: &std::path::Path) -> Result<(), String> {
+    if !file_path.exists() {
+        return Ok(());
+    }
+
+    if file_path.is_dir() {
+        return Err("下载文件路径指向目录，已取消删除".to_string());
+    }
+
+    std::fs::remove_file(file_path)
+        .map_err(|err| format!("无法删除本地文件 {}：{err}", file_path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::DownloadTaskOptions;
+
+    fn sample_task(save_dir: PathBuf, file_name: &str) -> DownloadTask {
+        DownloadTask {
+            id: "gid-1".to_string(),
+            gid: Some("gid-1".to_string()),
+            url: "https://example.com/file.zip".to_string(),
+            file_name: file_name.to_string(),
+            save_dir: save_dir.display().to_string(),
+            total_bytes: 100,
+            completed_bytes: 100,
+            download_speed: 0,
+            connections: 0,
+            status: DownloadStatus::Complete,
+            resumable: true,
+            error_message: None,
+            created_at: "2026-05-31T00:00:00.000Z".to_string(),
+            updated_at: "2026-05-31T00:00:00.000Z".to_string(),
+            options: DownloadTaskOptions {
+                split: 16,
+                max_connection_per_server: 16,
+                speed_limit: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn download_file_path_joins_save_dir_and_file_name() {
+        let save_dir = PathBuf::from("D:\\Downloads");
+        let task = sample_task(save_dir.clone(), "archive.zip");
+
+        assert_eq!(
+            download_file_path_from_task(&task),
+            save_dir.join("archive.zip")
+        );
+    }
+
+    #[test]
+    fn delete_file_if_present_removes_files_but_not_directories() {
+        let root =
+            std::env::temp_dir().join(format!("idm-delete-file-test-{}", uuid::Uuid::new_v4()));
+        let file_path = root.join("archive.zip");
+
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&file_path, "download").unwrap();
+
+        delete_file_if_present(&file_path).unwrap();
+        assert!(!file_path.exists());
+
+        let err = delete_file_if_present(&root).unwrap_err();
+        assert!(err.contains("指向目录"));
+
+        delete_file_if_present(&file_path).unwrap();
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

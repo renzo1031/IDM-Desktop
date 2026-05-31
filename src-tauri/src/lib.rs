@@ -38,7 +38,10 @@ pub fn run() {
             commands::create_download,
             commands::pause_download,
             commands::resume_download,
-            commands::remove_download
+            commands::remove_download,
+            commands::remove_download_with_file,
+            commands::open_download_file,
+            commands::open_download_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

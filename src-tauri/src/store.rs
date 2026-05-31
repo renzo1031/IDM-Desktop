@@ -51,6 +51,13 @@ impl TaskStore {
         self.save_all(&tasks)
     }
 
+    pub fn find(&self, id: &str) -> Result<Option<DownloadTask>, String> {
+        Ok(self
+            .load_all()?
+            .into_iter()
+            .find(|task| task.id == id || task.gid.as_deref() == Some(id)))
+    }
+
     pub fn update_status(
         &self,
         gid: &str,
@@ -127,6 +134,20 @@ mod tests {
 
         assert_eq!(tasks[0].status, DownloadStatus::Paused);
         assert_eq!(tasks[0].download_speed, 0);
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn store_finds_task_by_id_or_gid() {
+        let root = std::env::temp_dir().join(format!("idm-store-test-{}", uuid::Uuid::new_v4()));
+        let store = TaskStore::new(root.join("tasks.json"));
+        let task = sample_task("gid-1");
+
+        store.upsert(task.clone()).unwrap();
+
+        assert_eq!(store.find("gid-1").unwrap(), Some(task));
+        assert!(store.find("missing").unwrap().is_none());
 
         std::fs::remove_dir_all(root).unwrap();
     }

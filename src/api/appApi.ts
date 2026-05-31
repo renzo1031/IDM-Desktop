@@ -115,11 +115,38 @@ export async function resumeDownload(gid: string): Promise<void> {
   return invoke<void>("resume_download", { gid });
 }
 
-export async function removeDownload(gid: string): Promise<void> {
+export interface RemoveDownloadOptions {
+  deleteFile?: boolean;
+}
+
+export async function removeDownload(
+  gid: string,
+  options: RemoveDownloadOptions = {},
+): Promise<void> {
   if (!isTauriRuntime()) {
     fallbackDownloads = fallbackDownloads.filter((task) => task.gid !== gid);
     return;
   }
 
-  return invoke<void>("remove_download", { gid });
+  if (options.deleteFile) {
+    return invoke<void>("remove_download_with_file", { gid, deleteFile: true });
+  }
+
+  return invoke<void>("remove_download_with_file", { gid, deleteFile: false });
+}
+
+export async function openDownloadFile(gid: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  return invoke<void>("open_download_file", { gid });
+}
+
+export async function openDownloadDir(gid: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  return invoke<void>("open_download_dir", { gid });
 }

@@ -375,6 +375,12 @@ button {
   margin-top: 12px;
 }
 
+.details-panel .danger-action {
+  color: #8a2d2d;
+  border-color: #e3b8b8;
+  background: #fff6f6;
+}
+
 .statusbar {
   display: flex;
   align-items: center;

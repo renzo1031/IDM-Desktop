@@ -13,6 +13,8 @@ import {
   createDownload,
   getAppStatus,
   listDownloads,
+  openDownloadDir,
+  openDownloadFile,
   pauseDownload,
   removeDownload,
   resumeDownload,
@@ -268,6 +270,49 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
     }
   }
 
+  async function handleRemoveTaskWithFile(task: DownloadTask) {
+    if (!task.gid) {
+      return;
+    }
+
+    try {
+      await removeDownload(task.gid, { deleteFile: true });
+      setTasksState((current) => {
+        const nextTasks = current.filter((item) => item.id !== task.id);
+        if (selectedTaskId === task.id) {
+          setSelectedTaskId(nextTasks[0]?.id ?? "");
+        }
+        return nextTasks;
+      });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleOpenTaskFile(task: DownloadTask) {
+    if (!task.gid) {
+      return;
+    }
+
+    try {
+      await openDownloadFile(task.gid);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleOpenTaskDir(task: DownloadTask) {
+    if (!task.gid) {
+      return;
+    }
+
+    try {
+      await openDownloadDir(task.gid);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="download-window" aria-label="下载管理器主窗口">
@@ -416,6 +461,12 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
             </label>
 
             <div className="detail-actions">
+              {selectedTask.status === "complete" ? (
+                <button onClick={() => handleOpenTaskFile(selectedTask)} type="button">
+                  <FolderOpen size={15} />
+                  打开
+                </button>
+              ) : null}
               <button onClick={() => handlePauseTask(selectedTask)} type="button">
                 <Pause size={15} />
                 {selectedTask.status === "paused" ? "继续" : "暂停"}
@@ -424,13 +475,21 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
                 <RefreshCw size={15} />
                 重试
               </button>
-              <button type="button">
+              <button onClick={() => handleOpenTaskDir(selectedTask)} type="button">
                 <FolderOpen size={15} />
                 目录
               </button>
               <button onClick={() => handleRemoveTask(selectedTask)} type="button">
                 <Trash2 size={15} />
                 删除
+              </button>
+              <button
+                className="danger-action"
+                onClick={() => handleRemoveTaskWithFile(selectedTask)}
+                type="button"
+              >
+                <Trash2 size={15} />
+                删文件
               </button>
             </div>
               </>

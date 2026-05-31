@@ -6,7 +6,10 @@ import {
   createDownload,
   getAppStatus,
   listDownloads,
+  openDownloadDir,
+  openDownloadFile,
   pauseDownload,
+  removeDownload,
 } from "./api/appApi";
 import type { DownloadTask } from "./types/download";
 
@@ -14,6 +17,8 @@ vi.mock("./api/appApi", () => ({
   createDownload: vi.fn(),
   getAppStatus: vi.fn(),
   listDownloads: vi.fn(),
+  openDownloadDir: vi.fn(),
+  openDownloadFile: vi.fn(),
   pauseDownload: vi.fn(),
   removeDownload: vi.fn(),
   resumeDownload: vi.fn(),
@@ -58,6 +63,9 @@ describe("App", () => {
     vi.mocked(listDownloads).mockResolvedValue([]);
     vi.mocked(createDownload).mockResolvedValue(createdTask);
     vi.mocked(pauseDownload).mockResolvedValue();
+    vi.mocked(openDownloadFile).mockResolvedValue();
+    vi.mocked(openDownloadDir).mockResolvedValue();
+    vi.mocked(removeDownload).mockResolvedValue();
   });
 
   it("renders the 980px three-column downloader shell", async () => {
@@ -141,5 +149,29 @@ describe("App", () => {
     expect(within(taskPanel).getByText("0%")).toBeInTheDocument();
     expect(await within(taskPanel).findByText("50%")).toBeInTheDocument();
     expect(listDownloads).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens files, opens folders, and supports deleting local files", async () => {
+    const user = userEvent.setup();
+    const completeTask: DownloadTask = {
+      ...createdTask,
+      status: "complete",
+      completedBytes: createdTask.totalBytes,
+    };
+    vi.mocked(listDownloads).mockResolvedValue([completeTask]);
+
+    render(<App initialTasks={[]} />);
+
+    expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
+    const detailsPanel = screen.getByLabelText("任务详情面板");
+
+    await user.click(within(detailsPanel).getByRole("button", { name: "打开" }));
+    expect(openDownloadFile).toHaveBeenCalledWith("gid-1");
+
+    await user.click(within(detailsPanel).getByRole("button", { name: "目录" }));
+    expect(openDownloadDir).toHaveBeenCalledWith("gid-1");
+
+    await user.click(within(detailsPanel).getByRole("button", { name: "删文件" }));
+    expect(removeDownload).toHaveBeenCalledWith("gid-1", { deleteFile: true });
   });
 });
