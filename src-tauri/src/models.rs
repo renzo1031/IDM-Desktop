@@ -47,6 +47,7 @@ pub struct AppStatus {
     pub app_name: String,
     pub aria2_engine: EngineStatus,
     pub default_split: u32,
+    pub max_active_downloads: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

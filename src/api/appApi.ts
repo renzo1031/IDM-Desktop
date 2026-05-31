@@ -6,10 +6,12 @@ const fallbackStatus: AppStatus = {
   appName: "IDM Desktop",
   aria2Engine: "bundled",
   defaultSplit: 16,
+  maxActiveDownloads: 3,
 };
 
 let fallbackDownloads: DownloadTask[] = [];
 let fallbackDownloadId = 0;
+let fallbackMaxActiveDownloads = fallbackStatus.maxActiveDownloads;
 
 function isTauriRuntime(): boolean {
   return "__TAURI_INTERNALS__" in window;
@@ -27,11 +29,15 @@ function updateFallbackDownload(
 export function resetFallbackDownloadsForTest(): void {
   fallbackDownloads = [];
   fallbackDownloadId = 0;
+  fallbackMaxActiveDownloads = fallbackStatus.maxActiveDownloads;
 }
 
 export async function getAppStatus(): Promise<AppStatus> {
   if (!isTauriRuntime()) {
-    return fallbackStatus;
+    return {
+      ...fallbackStatus,
+      maxActiveDownloads: fallbackMaxActiveDownloads,
+    };
   }
 
   return invoke<AppStatus>("app_status");
@@ -41,9 +47,55 @@ export interface CreateDownloadInput {
   url: string;
   saveDir: string;
   fileName?: string;
+  totalBytes?: number | null;
+  resumable?: boolean;
   split?: number;
   speedLimit?: number;
   proxyUrl?: string;
+}
+
+export interface PreviewDownloadInput {
+  url: string;
+  proxyUrl?: string;
+}
+
+export interface DownloadPreview {
+  url: string;
+  fileName: string;
+  totalBytes: number | null;
+  resumable: boolean;
+}
+
+function fallbackFileNameFromUrl(url: string): string {
+  try {
+    const parsedUrl = new URL(url);
+    const rawName = parsedUrl.pathname.split("/").filter(Boolean).pop();
+    return rawName ? decodeURIComponent(rawName) : "download.bin";
+  } catch {
+    const rawName = url.split(/[?#]/)[0].split("/").filter(Boolean).pop();
+    return rawName ? decodeURIComponent(rawName) : "download.bin";
+  }
+}
+
+export async function previewDownload(input: PreviewDownloadInput): Promise<DownloadPreview> {
+  const url = input.url.trim();
+  const proxyUrl = input.proxyUrl?.trim();
+  if (!isTauriRuntime()) {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      throw new Error("仅支持 HTTP/HTTPS 下载链接");
+    }
+
+    return {
+      url,
+      fileName: fallbackFileNameFromUrl(url),
+      totalBytes: null,
+      resumable: true,
+    };
+  }
+
+  return invoke<DownloadPreview>("preview_download", {
+    input: { url, ...(proxyUrl ? { proxyUrl } : {}) },
+  });
 }
 
 export async function listDownloads(): Promise<DownloadTask[]> {
@@ -68,12 +120,12 @@ export async function createDownload(input: CreateDownloadInput): Promise<Downlo
       url: input.url,
       fileName: fallbackName,
       saveDir: input.saveDir,
-      totalBytes: 0,
+      totalBytes: input.totalBytes ?? 0,
       completedBytes: 0,
       downloadSpeed: 0,
       connections: 0,
       status: "waiting",
-      resumable: true,
+      resumable: input.resumable ?? true,
       createdAt: now,
       updatedAt: now,
       options: {
@@ -116,6 +168,84 @@ export async function resumeDownload(gid: string): Promise<void> {
   }
 
   return invoke<void>("resume_download", { gid });
+}
+
+export interface QueueSettingsInput {
+  maxActiveDownloads: number;
+}
+
+function clampMaxActiveDownloads(value: number): number {
+  if (!Number.isFinite(value)) {
+    return fallbackStatus.maxActiveDownloads;
+  }
+
+  return Math.min(64, Math.max(1, Math.round(value)));
+}
+
+export async function updateQueueSettings(input: QueueSettingsInput): Promise<void> {
+  const maxActiveDownloads = clampMaxActiveDownloads(input.maxActiveDownloads);
+  if (!isTauriRuntime()) {
+    fallbackMaxActiveDownloads = maxActiveDownloads;
+    return;
+  }
+
+  return invoke<void>("update_queue_settings", {
+    input: { maxActiveDownloads },
+  });
+}
+
+export async function pauseAllDownloads(): Promise<void> {
+  if (!isTauriRuntime()) {
+    const now = new Date().toISOString();
+    fallbackDownloads = fallbackDownloads.map((task) => {
+      if (!["active", "waiting", "paused"].includes(task.status)) {
+        return task;
+      }
+
+      return {
+        ...task,
+        downloadSpeed: 0,
+        status: "paused",
+        updatedAt: now,
+      };
+    });
+    return;
+  }
+
+  return invoke<void>("pause_all_downloads");
+}
+
+export async function resumeAllDownloads(): Promise<void> {
+  if (!isTauriRuntime()) {
+    const now = new Date().toISOString();
+    let activeCount = 0;
+    fallbackDownloads = fallbackDownloads.map((task) => {
+      if (!["paused", "waiting", "active"].includes(task.status)) {
+        return task;
+      }
+
+      activeCount += 1;
+      return {
+        ...task,
+        status: activeCount <= fallbackMaxActiveDownloads ? "active" : "waiting",
+        updatedAt: now,
+      };
+    });
+    return;
+  }
+
+  return invoke<void>("resume_all_downloads");
+}
+
+export async function purgeStoppedDownloads(): Promise<void> {
+  if (!isTauriRuntime()) {
+    fallbackDownloads = fallbackDownloads.filter(
+      (task) => task.status !== "complete" && task.status !== "error",
+    );
+    return;
+  }
+
+  return invoke<void>("purge_stopped_downloads");
 }
 
 export interface RemoveDownloadOptions {

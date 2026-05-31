@@ -9,6 +9,7 @@ pub struct Aria2Config {
     pub secret: String,
     pub default_split: u32,
     pub max_connection_per_server: u32,
+    pub max_concurrent_downloads: u32,
     pub min_split_size: String,
 }
 
@@ -26,6 +27,7 @@ impl Default for Aria2Config {
             secret: "idm-local-secret".to_string(),
             default_split: 16,
             max_connection_per_server: 16,
+            max_concurrent_downloads: 3,
             min_split_size: "1M".to_string(),
         }
     }
@@ -90,14 +92,29 @@ pub fn bundled_binary_path(resource_dir: &Path) -> PathBuf {
     resource_dir.join("aria2").join(file_name)
 }
 
-pub fn resolve_bundled_binary(resource_dir: &Path) -> Result<PathBuf, String> {
-    let path = bundled_binary_path(resource_dir);
+pub fn bundled_binary_candidates(resource_dir: &Path) -> Vec<PathBuf> {
+    let file_name = if cfg!(windows) { "aria2c.exe" } else { "aria2c" };
 
-    if path.is_file() {
-        Ok(path)
-    } else {
-        Err(format!("未找到内置 aria2：{}", path.display()))
+    vec![
+        bundled_binary_path(resource_dir),
+        resource_dir.join("resources").join("aria2").join(file_name),
+    ]
+}
+
+pub fn resolve_bundled_binary(resource_dir: &Path) -> Result<PathBuf, String> {
+    let candidates = bundled_binary_candidates(resource_dir);
+
+    if let Some(path) = candidates.iter().find(|path| path.is_file()) {
+        return Ok(path.clone());
     }
+
+    let checked_paths = candidates
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join("，");
+
+    Err(format!("未找到内置 aria2：{}", checked_paths))
 }
 
 fn rpc_port(config: &Aria2Config) -> u16 {
@@ -126,6 +143,10 @@ pub fn build_daemon_args(
             "--max-connection-per-server={}",
             config.max_connection_per_server
         ),
+        format!(
+            "--max-concurrent-downloads={}",
+            config.max_concurrent_downloads
+        ),
         format!("--min-split-size={}", config.min_split_size),
         format!("--dir={}", default_download_dir.display()),
         format!("--input-file={}", session_file.display()),
@@ -146,6 +167,10 @@ pub fn prepare_launch_plan(
         .map_err(|err| format!("无法创建 aria2 会话目录：{err}"))?;
 
     let session_file = app_data_dir.join("aria2.session");
+    if !session_file.exists() {
+        std::fs::write(&session_file, "")
+            .map_err(|err| format!("无法创建 aria2 会话文件：{err}"))?;
+    }
     let args = build_daemon_args(config, default_download_dir, &session_file);
 
     Ok(Aria2LaunchPlan {
@@ -163,13 +188,13 @@ pub fn add_uri_options(
     proxy_url: Option<String>,
     config: &Aria2Config,
 ) -> AddUriOptions {
-    let safe_split = split.clamp(1, 32);
+    let safe_split = split.clamp(1, 64);
 
     AddUriOptions {
         dir: save_dir.into(),
         out: file_name,
         split: safe_split.to_string(),
-        max_connection_per_server: config.max_connection_per_server.to_string(),
+        max_connection_per_server: safe_split.to_string(),
         min_split_size: config.min_split_size.clone(),
         max_download_limit: (speed_limit > 0).then(|| speed_limit.to_string()),
         all_proxy: proxy_url,
@@ -244,6 +269,49 @@ pub fn build_resume_payload(gid: &str, config: &Aria2Config) -> Value {
 
 pub fn build_remove_payload(gid: &str, config: &Aria2Config) -> Value {
     build_gid_payload("remove", "aria2.remove", gid, config)
+}
+
+pub fn build_remove_download_result_payload(gid: &str, config: &Aria2Config) -> Value {
+    build_gid_payload("remove-result", "aria2.removeDownloadResult", gid, config)
+}
+
+pub fn build_change_global_option_payload(max_active_downloads: u32, config: &Aria2Config) -> Value {
+    let safe_max = max_active_downloads.clamp(1, 64);
+
+    json!({
+        "jsonrpc": "2.0",
+        "id": "change-global-option",
+        "method": "aria2.changeGlobalOption",
+        "params": [
+            token(config),
+            {
+                "max-concurrent-downloads": safe_max.to_string()
+            }
+        ]
+    })
+}
+
+fn build_token_payload(id: &str, method: &str, config: &Aria2Config) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+        "params": [
+            token(config)
+        ]
+    })
+}
+
+pub fn build_pause_all_payload(config: &Aria2Config) -> Value {
+    build_token_payload("pause-all", "aria2.pauseAll", config)
+}
+
+pub fn build_resume_all_payload(config: &Aria2Config) -> Value {
+    build_token_payload("resume-all", "aria2.unpauseAll", config)
+}
+
+pub fn build_purge_download_result_payload(config: &Aria2Config) -> Value {
+    build_token_payload("purge-download-result", "aria2.purgeDownloadResult", config)
 }
 
 pub fn build_shutdown_payload(config: &Aria2Config) -> Value {
@@ -455,8 +523,8 @@ mod tests {
 
         assert_eq!(options.dir, "D:\\Downloads");
         assert_eq!(options.out, Some("file.iso".to_string()));
-        assert_eq!(options.split, "32");
-        assert_eq!(options.max_connection_per_server, "16");
+        assert_eq!(options.split, "64");
+        assert_eq!(options.max_connection_per_server, "64");
         assert_eq!(options.continue_download, "true");
     }
 
@@ -511,6 +579,21 @@ mod tests {
     }
 
     #[test]
+    fn resolve_bundled_binary_supports_dev_resources_subdirectory() {
+        let root = std::env::temp_dir().join(format!("idm-aria2-dev-test-{}", uuid::Uuid::new_v4()));
+        let binary_path = root.join("resources").join("aria2").join("aria2c.exe");
+
+        std::fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+        std::fs::write(&binary_path, "").unwrap();
+
+        let resolved = resolve_bundled_binary(&root).unwrap();
+
+        assert_eq!(resolved, binary_path);
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn daemon_args_enable_rpc_resume_and_session_restore() {
         let config = Aria2Config::default();
         let args = build_daemon_args(
@@ -530,6 +613,7 @@ mod tests {
         assert!(args.contains(&"--dir=D:\\Downloads".to_string()));
         assert!(args.contains(&"--input-file=D:\\IDM\\aria2.session".to_string()));
         assert!(args.contains(&"--save-session=D:\\IDM\\aria2.session".to_string()));
+        assert!(args.contains(&"--max-concurrent-downloads=3".to_string()));
     }
 
     #[test]
@@ -542,6 +626,22 @@ mod tests {
         assert_eq!(version_payload["params"][0], "token:idm-local-secret");
         assert_eq!(stat_payload["method"], "aria2.getGlobalStat");
         assert_eq!(stat_payload["params"][0], "token:idm-local-secret");
+    }
+
+    #[test]
+    fn queue_control_payloads_use_aria2_global_methods() {
+        let config = Aria2Config::default();
+        let change_payload = build_change_global_option_payload(5, &config);
+        let pause_all_payload = build_pause_all_payload(&config);
+        let resume_all_payload = build_resume_all_payload(&config);
+        let purge_payload = build_purge_download_result_payload(&config);
+
+        assert_eq!(change_payload["method"], "aria2.changeGlobalOption");
+        assert_eq!(change_payload["params"][0], "token:idm-local-secret");
+        assert_eq!(change_payload["params"][1]["max-concurrent-downloads"], "5");
+        assert_eq!(pause_all_payload["method"], "aria2.pauseAll");
+        assert_eq!(resume_all_payload["method"], "aria2.unpauseAll");
+        assert_eq!(purge_payload["method"], "aria2.purgeDownloadResult");
     }
 
     #[test]
@@ -566,6 +666,7 @@ mod tests {
 
         assert_eq!(plan.binary_path, binary_path);
         assert_eq!(plan.session_file, app_data_dir.join("aria2.session"));
+        assert!(plan.session_file.is_file());
         assert!(plan.args.contains(&format!(
             "--save-session={}",
             app_data_dir.join("aria2.session").display()
@@ -581,14 +682,21 @@ mod tests {
         let pause_payload = build_pause_payload("abc123", &config);
         let resume_payload = build_resume_payload("abc123", &config);
         let remove_payload = build_remove_payload("abc123", &config);
+        let remove_result_payload = build_remove_download_result_payload("abc123", &config);
         let status_payload = build_tell_status_payload("abc123", &config);
 
         assert_eq!(pause_payload["method"], "aria2.pause");
         assert_eq!(resume_payload["method"], "aria2.unpause");
         assert_eq!(remove_payload["method"], "aria2.remove");
+        assert_eq!(
+            remove_result_payload["method"],
+            "aria2.removeDownloadResult"
+        );
         assert_eq!(status_payload["method"], "aria2.tellStatus");
         assert_eq!(pause_payload["params"][0], "token:idm-local-secret");
         assert_eq!(pause_payload["params"][1], "abc123");
+        assert_eq!(remove_result_payload["params"][0], "token:idm-local-secret");
+        assert_eq!(remove_result_payload["params"][1], "abc123");
         assert_eq!(status_payload["params"][2][0], "gid");
         assert_eq!(status_payload["params"][2][1], "status");
     }

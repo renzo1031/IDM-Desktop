@@ -40,25 +40,22 @@ button:disabled {
 .app-shell {
   min-height: 100vh;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.5), transparent 38%),
-    #dfe5eb;
+  padding: 0;
+  background: #fff;
 }
 
 .download-window {
   position: relative;
-  width: min(980px, 100%);
-  min-height: 680px;
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
   display: grid;
-  grid-template-rows: 50px 1fr 28px;
+  grid-template-rows: 50px minmax(0, 1fr) 28px;
   overflow: hidden;
-  border: 1px solid #b8c3ce;
-  border-radius: 10px;
+  border: 0;
+  border-radius: 0;
   background: #fff;
-  box-shadow: 0 22px 50px rgba(37, 50, 64, 0.16);
+  box-shadow: none;
 }
 
 .toolbar {
@@ -91,26 +88,13 @@ button:disabled {
   font-size: 12px;
 }
 
-.url-entry {
+.toolbar-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
   min-width: 0;
   gap: 6px;
-}
-
-.url-entry input,
-.details-panel input {
-  min-width: 0;
-  border: 1px solid #c8d1dc;
-  border-radius: 6px;
-  background: #fff;
-  color: #182532;
-}
-
-.url-entry input {
-  flex: 1;
-  height: 30px;
-  padding: 0 10px;
 }
 
 .toolbar button,
@@ -196,9 +180,39 @@ button:disabled {
 
 .task-panel {
   min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
   border-right: 1px solid #d8e0e8;
   background: #fff;
+}
+
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-bottom: 1px solid #d8e0e8;
+  background: #fbfcfd;
+}
+
+.batch-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid #c8d1dc;
+  border-radius: 6px;
+  color: #24313f;
+  background: #fff;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .task-header,
@@ -220,7 +234,13 @@ button:disabled {
 
 .task-list {
   min-width: 0;
-  overflow: hidden;
+  min-height: 0;
+  overflow: hidden auto;
+  scrollbar-width: none;
+}
+
+.task-list::-webkit-scrollbar {
+  display: none;
 }
 
 .inline-error,
@@ -300,8 +320,16 @@ button:disabled {
 
 .details-panel {
   min-width: 0;
+  min-height: 0;
   padding: 12px;
+  overflow: hidden auto;
+  overflow-y: auto;
+  scrollbar-width: none;
   background: #fbfcfd;
+}
+
+.details-panel::-webkit-scrollbar {
+  display: none;
 }
 
 .details-panel h2 {
@@ -361,17 +389,27 @@ button:disabled {
   font-size: 12px;
 }
 
-.details-panel label {
+.readonly-list {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   margin-top: 8px;
-  color: #546575;
   font-size: 12px;
 }
 
-.details-panel input {
-  height: 28px;
-  padding: 0 8px;
+.readonly-list span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e0e6ec;
+  border-radius: 6px;
+  color: #546575;
+  background: #fff;
+}
+
+.readonly-list strong {
+  color: #182532;
 }
 
 .detail-actions {
@@ -388,10 +426,11 @@ button:disabled {
 }
 
 .statusbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(58px, auto);
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
+  min-height: 28px;
   padding: 0 10px;
   border-top: 1px solid #ccd5df;
   background: #eef2f6;
@@ -406,6 +445,17 @@ button:disabled {
   white-space: nowrap;
 }
 
+.statusbar span:nth-child(2) {
+  justify-self: center;
+}
+
+.status-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 6px;
+  justify-self: end;
+}
+
 .statusbar button {
   min-width: 24px;
   min-height: 22px;
@@ -413,36 +463,25 @@ button:disabled {
   background: transparent;
 }
 
-.settings-panel,
-.task-options-panel {
-  position: absolute;
-  right: 38px;
-  bottom: 34px;
-  z-index: 3;
-  display: grid;
-  align-items: end;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid #c8d1dc;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 14px 32px rgba(37, 50, 64, 0.18);
+.dialog-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
 }
 
-.settings-panel {
-  width: min(560px, calc(100% - 56px));
-  grid-template-columns: minmax(150px, 1fr) 82px minmax(150px, 1fr) auto;
+.dialog-title strong {
+  font-size: 14px;
 }
 
-.task-options-panel {
-  top: 56px;
-  bottom: auto;
-  width: min(520px, calc(100% - 56px));
-  grid-template-columns: minmax(170px, 1fr) 88px 110px;
+.dialog-title span {
+  margin-top: 2px;
+  color: #697989;
+  font-size: 12px;
 }
 
-.settings-panel label,
-.task-options-panel label {
+.settings-dialog label,
+.new-task-dialog label {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -450,22 +489,268 @@ button:disabled {
   font-size: 12px;
 }
 
-.settings-panel input,
-.task-options-panel input {
+.settings-dialog input,
+.new-task-dialog input {
   min-width: 0;
-  height: 28px;
+  height: 32px;
   padding: 0 8px;
   border: 1px solid #c8d1dc;
   border-radius: 6px;
+  background: #fff;
+  color: #182532;
 }
 
-.settings-panel button {
-  height: 28px;
+.settings-dialog button,
+.new-task-dialog button {
+  min-height: 32px;
   padding: 0 10px;
-  border: 1px solid #2569d6;
   border-radius: 6px;
+  border: 1px solid #c8d1dc;
+  color: #24313f;
+  background: #fff;
+}
+
+.settings-dialog .primary-action,
+.new-task-dialog .primary-action {
+  border: 1px solid #2569d6;
   color: #fff;
   background: #2569d6;
+}
+
+.switch-row {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.switch-row input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: #2569d6;
+}
+
+.settings-dialog {
+  width: min(660px, 100%);
+  max-height: calc(100vh - 36px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #b9c6d3;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(20, 31, 43, 0.28);
+}
+
+.settings-dialog .dialog-title button {
+  width: 30px;
+  padding: 0;
+}
+
+.settings-layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 122px minmax(0, 1fr);
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.settings-tabs {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 8px;
+  border-right: 1px solid #d8e0e8;
+  background: #f5f8fa;
+}
+
+.settings-tabs button {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+  background: transparent;
+}
+
+.settings-tabs button.active {
+  border-color: #cbd9ea;
+  color: #1d57b3;
+  background: #edf4ff;
+}
+
+.settings-content {
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden auto;
+  scrollbar-width: none;
+}
+
+.settings-content::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-page {
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.setting-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e0e6ec;
+  border-radius: 6px;
+  color: #546575;
+  background: #fff;
+  font-size: 12px;
+}
+
+.setting-card strong {
+  color: #182532;
+  font-weight: 700;
+}
+
+.split-choices {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.split-choices button.active {
+  border-color: #2569d6;
+  color: #1d57b3;
+  background: #edf4ff;
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(20, 31, 43, 0.28);
+}
+
+.new-task-dialog {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #b9c6d3;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(20, 31, 43, 0.28);
+}
+
+.dialog-title button {
+  width: 30px;
+  padding: 0;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.preview-card {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d8e0e8;
+  border-radius: 6px;
+  background: #f8fafb;
+  color: #546575;
+  font-size: 12px;
+}
+
+.preview-card span {
+  color: #697989;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.preview-card strong,
+.preview-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-card strong {
+  color: #182532;
+}
+
+.preview-card.success {
+  border-color: #c7dfc9;
+  background: #f3faf3;
+}
+
+.preview-card.error {
+  border-color: #e3c3c3;
+  background: #fff7f7;
+}
+
+.preview-card.error strong {
+  color: #8a2d2d;
+}
+
+.dialog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.thread-select-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #546575;
+  font-size: 12px;
+}
+
+.quick-splits {
+  display: flex;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid #c8d1dc;
+  border-radius: 6px;
+  background: #f7f9fb;
+}
+
+.quick-splits button {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 0;
+  font-size: 12px;
+  background: transparent;
+}
+
+.quick-splits button.active {
+  color: #1d57b3;
+  background: #fff;
+  box-shadow: 0 0 0 1px #2569d6;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 @media (max-width: 900px) {
@@ -474,7 +759,7 @@ button:disabled {
   }
 
   .download-window {
-    min-height: 620px;
+    min-height: 0;
   }
 
   .content-grid {
@@ -498,8 +783,14 @@ button:disabled {
     padding: 10px;
   }
 
+  .toolbar-actions {
+    justify-self: stretch;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
   .download-window {
-    grid-template-rows: auto 1fr 28px;
+    grid-template-rows: auto minmax(0, 1fr) 28px;
   }
 
   .content-grid {
@@ -513,10 +804,6 @@ button:disabled {
     border-bottom: 1px solid #d8e0e8;
   }
 
-  .task-panel {
-    min-height: 0;
-  }
-
   .category-list {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
@@ -526,21 +813,22 @@ button:disabled {
     display: none;
   }
 
-  .settings-panel {
-    right: 18px;
-    left: 18px;
-    width: auto;
-    grid-template-columns: minmax(0, 1fr) 82px;
+  .settings-layout {
+    grid-template-columns: 1fr;
   }
 
-  .task-options-panel {
-    right: 18px;
-    left: 18px;
-    width: auto;
-    grid-template-columns: minmax(0, 1fr) 82px;
+  .settings-tabs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border-right: 0;
+    border-bottom: 1px solid #d8e0e8;
   }
 
-  .settings-panel button {
-    grid-column: 1 / -1;
+  .settings-tabs button {
+    justify-content: center;
+    padding: 0 6px;
+  }
+
+  .dialog-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }

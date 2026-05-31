@@ -6,10 +6,15 @@ import {
   openDownloadDir,
   openDownloadFile,
   pauseDownload,
+  pauseAllDownloads,
+  previewDownload,
+  purgeStoppedDownloads,
   removeDownload,
   resetFallbackDownloadsForTest,
   retryDownload,
   resumeDownload,
+  resumeAllDownloads,
+  updateQueueSettings,
 } from "./appApi";
 
 describe("appApi", () => {
@@ -22,6 +27,7 @@ describe("appApi", () => {
       appName: "IDM Desktop",
       aria2Engine: "bundled",
       defaultSplit: 16,
+      maxActiveDownloads: 3,
     });
   });
 
@@ -64,6 +70,54 @@ describe("appApi", () => {
     expect(task.options.split).toBe(4);
     expect(task.options.maxConnectionPerServer).toBe(4);
     expect(task.options.speedLimit).toBe(512 * 1024);
+  });
+
+  it("stores fallback queue settings and exposes batch controls", async () => {
+    const first = await createDownload({
+      url: "https://example.com/first.zip",
+      saveDir: "D:\\Downloads",
+    });
+    const second = await createDownload({
+      url: "https://example.com/second.zip",
+      saveDir: "D:\\Downloads",
+    });
+
+    await updateQueueSettings({ maxActiveDownloads: 1 });
+    await resumeAllDownloads();
+    await expect(listDownloads()).resolves.toMatchObject([
+      { id: second.id, status: "active" },
+      { id: first.id, status: "waiting" },
+    ]);
+
+    await pauseAllDownloads();
+    await expect(listDownloads()).resolves.toMatchObject([
+      { status: "paused" },
+      { status: "paused" },
+    ]);
+
+    await createDownload({
+      url: "https://example.com/done.zip",
+      saveDir: "D:\\Downloads",
+    });
+    const downloads = await listDownloads();
+    downloads[0].status = "complete";
+
+    await purgeStoppedDownloads();
+    await expect(listDownloads()).resolves.toMatchObject([
+      { status: "paused" },
+      { status: "paused" },
+    ]);
+  });
+
+  it("previews fallback download metadata from the URL", async () => {
+    await expect(
+      previewDownload({ url: "https://example.com/releases/app.zip?token=abc" }),
+    ).resolves.toEqual({
+      url: "https://example.com/releases/app.zip?token=abc",
+      fileName: "app.zip",
+      totalBytes: null,
+      resumable: true,
+    });
   });
 
   it("keeps fallback downloads in memory for browser previews", async () => {

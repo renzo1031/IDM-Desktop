@@ -1,6 +1,9 @@
 use crate::aria2::{
-    build_add_uri_payload, build_pause_payload, build_remove_payload, build_resume_payload,
-    build_shutdown_payload, build_tell_version_payload, build_tell_status_payload,
+    build_add_uri_payload, build_change_global_option_payload, build_pause_all_payload,
+    build_pause_payload, build_purge_download_result_payload,
+    build_remove_download_result_payload, build_remove_payload, build_resume_all_payload,
+    build_resume_payload, build_shutdown_payload, build_tell_status_payload,
+    build_tell_version_payload,
     normalize_error_text, prepare_launch_plan, AddUriOptions, Aria2Config, Aria2TaskStatus,
 };
 use crate::models::{DownloadStatus, DownloadTask, DownloadTaskOptions};
@@ -158,7 +161,7 @@ impl DownloadService {
             }
         }
 
-        Ok(tasks)
+        Ok(visible_tasks(tasks))
     }
 
     async fn restore_task(&self, stored_task: &DownloadTask) -> Result<DownloadTask, String> {
@@ -183,14 +186,81 @@ impl DownloadService {
         self.inner.store.update_status(gid, DownloadStatus::Active, 0)
     }
 
+    pub async fn update_queue_settings(&self, max_active_downloads: u32) -> Result<(), String> {
+        self.ensure_started().await?;
+        self.rpc::<String>(build_change_global_option_payload(
+            max_active_downloads,
+            &self.inner.config,
+        ))
+        .await?;
+        Ok(())
+    }
+
+    pub async fn pause_all(&self) -> Result<(), String> {
+        self.ensure_started().await?;
+        self.rpc::<String>(build_pause_all_payload(&self.inner.config))
+            .await?;
+
+        let mut tasks = self.inner.store.load_all()?;
+        for task in &mut tasks {
+            if matches!(
+                task.status,
+                DownloadStatus::Active | DownloadStatus::Waiting | DownloadStatus::Paused
+            ) {
+                task.status = DownloadStatus::Paused;
+                task.download_speed = 0;
+            }
+        }
+        self.inner.store.save_all(&tasks)
+    }
+
+    pub async fn resume_all(&self) -> Result<(), String> {
+        self.ensure_started().await?;
+        self.rpc::<String>(build_resume_all_payload(&self.inner.config))
+            .await?;
+
+        let mut tasks = self.inner.store.load_all()?;
+        for task in &mut tasks {
+            if matches!(task.status, DownloadStatus::Paused | DownloadStatus::Waiting) {
+                task.status = DownloadStatus::Waiting;
+                task.download_speed = 0;
+            }
+        }
+        self.inner.store.save_all(&tasks)
+    }
+
+    pub async fn purge_stopped(&self) -> Result<(), String> {
+        self.ensure_started().await?;
+        self.rpc::<String>(build_purge_download_result_payload(&self.inner.config))
+            .await?;
+
+        let tasks = self.inner.store.load_all()?;
+        let clearable = clearable_tasks(&tasks);
+        for task in clearable {
+            self.inner.store.remove(&task.id)?;
+        }
+        Ok(())
+    }
+
     pub async fn remove(&self, gid: &str) -> Result<(), String> {
         self.remove_with_file(gid, false).await
     }
 
     pub async fn remove_with_file(&self, gid: &str, delete_file: bool) -> Result<(), String> {
         self.ensure_started().await?;
-        self.rpc::<String>(build_remove_payload(gid, &self.inner.config))
-            .await?;
+        let remove_result = self
+            .rpc::<String>(build_remove_payload(gid, &self.inner.config))
+            .await;
+        let remove_history_result = self
+            .rpc::<String>(build_remove_download_result_payload(gid, &self.inner.config))
+            .await;
+
+        if let Err(err) = remove_result {
+            if remove_history_result.is_err() {
+                return Err(err);
+            }
+        }
+
         if delete_file {
             self.delete_download_file(gid)?;
         }
@@ -343,6 +413,12 @@ pub fn with_request_options(mut task: DownloadTask, options: &AddUriOptions) -> 
 
 pub fn merge_task_options(mut task: DownloadTask, stored: &DownloadTask) -> DownloadTask {
     task.options = stored.options.clone();
+    if task.total_bytes == 0 && stored.total_bytes > 0 {
+        task.total_bytes = stored.total_bytes;
+    }
+    if task.completed_bytes == 0 {
+        task.resumable = stored.resumable;
+    }
     task
 }
 
@@ -393,6 +469,21 @@ pub fn restore_candidates(
                         .is_some_and(|stored_gid| live.gid.as_deref() == Some(stored_gid))
             })
         })
+        .cloned()
+        .collect()
+}
+
+pub fn visible_tasks(tasks: Vec<DownloadTask>) -> Vec<DownloadTask> {
+    tasks
+        .into_iter()
+        .filter(|task| task.status != DownloadStatus::Removed)
+        .collect()
+}
+
+pub fn clearable_tasks(tasks: &[DownloadTask]) -> Vec<DownloadTask> {
+    tasks
+        .iter()
+        .filter(|task| matches!(task.status, DownloadStatus::Complete | DownloadStatus::Error))
         .cloned()
         .collect()
 }
@@ -576,6 +667,24 @@ mod tests {
     }
 
     #[test]
+    fn merge_stored_options_keeps_preview_metadata_when_live_status_is_empty() {
+        let stored = sample_task(PathBuf::from("D:\\Downloads"), "archive.zip");
+        let mut live = stored.clone();
+        live.total_bytes = 0;
+        live.completed_bytes = 0;
+        live.resumable = true;
+
+        let mut stored_with_preview = stored.clone();
+        stored_with_preview.total_bytes = 1_048_576;
+        stored_with_preview.resumable = false;
+
+        let merged = merge_stored_options(live, &[stored_with_preview]);
+
+        assert_eq!(merged.total_bytes, 1_048_576);
+        assert!(!merged.resumable);
+    }
+
+    #[test]
     fn restore_options_from_task_preserve_saved_metadata_and_pause_state() {
         let mut task = sample_task(PathBuf::from("E:\\Media"), "movie.iso");
         task.status = DownloadStatus::Paused;
@@ -616,6 +725,42 @@ mod tests {
         let candidates = restore_candidates(&[waiting.clone(), complete], &[live]);
 
         assert_eq!(candidates, vec![waiting]);
+    }
+
+    #[test]
+    fn visible_tasks_drop_removed_aria2_results() {
+        let mut active = sample_task(PathBuf::from("D:\\Downloads"), "active.zip");
+        active.id = "active-id".to_string();
+        active.gid = Some("active-gid".to_string());
+        active.status = DownloadStatus::Active;
+
+        let mut removed = sample_task(PathBuf::from("D:\\Downloads"), "removed.zip");
+        removed.id = "removed-id".to_string();
+        removed.gid = Some("removed-gid".to_string());
+        removed.status = DownloadStatus::Removed;
+
+        let visible = visible_tasks(vec![active.clone(), removed]);
+
+        assert_eq!(visible, vec![active]);
+    }
+
+    #[test]
+    fn clearable_tasks_include_complete_and_error_only() {
+        let mut complete = sample_task(PathBuf::from("D:\\Downloads"), "complete.zip");
+        complete.id = "complete-id".to_string();
+        complete.status = DownloadStatus::Complete;
+
+        let mut error = sample_task(PathBuf::from("D:\\Downloads"), "error.zip");
+        error.id = "error-id".to_string();
+        error.status = DownloadStatus::Error;
+
+        let mut active = sample_task(PathBuf::from("D:\\Downloads"), "active.zip");
+        active.id = "active-id".to_string();
+        active.status = DownloadStatus::Active;
+
+        let clearable = clearable_tasks(&[complete.clone(), error.clone(), active]);
+
+        assert_eq!(clearable, vec![complete, error]);
     }
 
     #[test]
