@@ -92,13 +92,15 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  grid-column: 3;
+  grid-row: 1;
   justify-self: end;
   min-width: 0;
   gap: 6px;
 }
 
 .toolbar button,
-.details-panel button,
+.task-property-dialog button,
 .statusbar button {
   display: inline-flex;
   align-items: center;
@@ -110,6 +112,8 @@ button:disabled {
   color: #24313f;
   background: #fff;
   border: 1px solid #c8d1dc;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .toolbar .primary-action {
@@ -119,8 +123,13 @@ button:disabled {
 }
 
 .speed-meter {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
   color: #4d5c69;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -128,7 +137,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: 150px minmax(430px, 1fr) 270px;
+  grid-template-columns: 150px minmax(430px, 1fr);
 }
 
 .sidebar {
@@ -170,6 +179,8 @@ button:disabled {
   border-radius: 6px;
   color: #24313f;
   background: transparent;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .category.active {
@@ -205,7 +216,8 @@ button:disabled {
   border-radius: 6px;
   color: #24313f;
   background: #fff;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 650;
   white-space: nowrap;
 }
 
@@ -219,14 +231,13 @@ button:disabled {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border-right: 1px solid #d8e0e8;
   background: #fff;
 }
 
 .task-header,
 .task-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.7fr) 70px 78px 70px 70px;
+  grid-template-columns: minmax(180px, 1.7fr) 70px 78px 70px 96px;
   align-items: center;
   gap: 7px;
 }
@@ -264,22 +275,8 @@ button:disabled {
   background: #f9e8e8;
 }
 
-.empty-state,
-.details-empty {
+.empty-state {
   color: #6b7987;
-}
-
-.details-empty {
-  margin-top: 10px;
-  padding: 12px;
-  border: 1px dashed #cbd5df;
-  border-radius: 6px;
-  background: #fff;
-}
-
-.details-empty p {
-  margin: 6px 0 0;
-  font-size: 12px;
 }
 
 .task-row {
@@ -291,11 +288,20 @@ button:disabled {
   color: #24313f;
   background: #fff;
   text-align: left;
-  font-size: 13px;
+  font-size: 12px;
+  cursor: default;
 }
 
 .task-row.selected {
   background: #f0f5fb;
+}
+
+.task-row:hover {
+  background: #f7faff;
+}
+
+.task-row.selected:hover {
+  background: #edf4ff;
 }
 
 .task-name {
@@ -304,8 +310,7 @@ button:disabled {
 
 .task-name strong,
 .task-name small,
-.details-panel h2,
-.path-text {
+.task-property-dialog h2 {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -313,35 +318,52 @@ button:disabled {
 }
 
 .task-name strong {
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .task-name small {
   margin-top: 2px;
   color: #6b7987;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .row-actions {
-  color: #2569d6;
-}
-
-.details-panel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
   min-width: 0;
-  min-height: 0;
-  padding: 12px;
-  overflow: hidden auto;
-  overflow-y: auto;
-  scrollbar-width: none;
-  background: #fbfcfd;
 }
 
-.details-panel::-webkit-scrollbar {
-  display: none;
+.row-actions button {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #2e5f9f;
+  background: transparent;
 }
 
-.details-panel h2 {
-  margin: 8px 0 0;
+.row-actions button:not(:disabled):hover {
+  border-color: #cbd9ea;
+  background: #edf4ff;
+}
+
+.row-actions button:disabled {
+  color: #9aa8b5;
+  background: transparent;
+  opacity: 0.5;
+}
+
+.task-property-dialog h2 {
+  margin: 0;
   font-size: 15px;
 }
 
@@ -379,24 +401,6 @@ button:disabled {
   margin-bottom: 2px;
 }
 
-.path-text {
-  margin: 7px 0 0;
-  color: #64717e;
-  font-size: 12px;
-}
-
-.engine-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px;
-  border-radius: 6px;
-  background: #edf4ed;
-  color: #28582f;
-  font-size: 12px;
-}
-
 .readonly-list {
   display: grid;
   gap: 8px;
@@ -427,7 +431,7 @@ button:disabled {
   margin-top: 12px;
 }
 
-.details-panel .danger-action {
+.task-property-dialog .danger-action {
   color: #8a2d2d;
   border-color: #e3b8b8;
   background: #fff6f6;
@@ -455,7 +459,8 @@ button:disabled {
   border-radius: 4px;
   color: #24313f;
   background: transparent;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 650;
   text-align: left;
 }
 
@@ -492,7 +497,8 @@ button:disabled {
   border-top: 1px solid #ccd5df;
   background: #eef2f6;
   color: #596a7a;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .statusbar span {
@@ -596,7 +602,7 @@ button:disabled {
 }
 
 .delete-dialog .danger-action,
-.details-panel .danger-action {
+.task-property-dialog .danger-action {
   color: #8a2d2d;
   border-color: #e3b8b8;
   background: #fff6f6;
@@ -749,6 +755,62 @@ button:disabled {
   box-shadow: 0 24px 60px rgba(20, 31, 43, 0.28);
 }
 
+.task-property-dialog {
+  width: min(600px, 100%);
+  max-height: calc(100vh - 36px);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  overflow: hidden auto;
+  border: 1px solid #b9c6d3;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(20, 31, 43, 0.28);
+  scrollbar-width: none;
+}
+
+.task-property-dialog::-webkit-scrollbar {
+  display: none;
+}
+
+.task-property-dialog .dialog-title button {
+  width: 30px;
+  padding: 0;
+}
+
+.property-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e0e6ec;
+  border-radius: 6px;
+  background: #f8fafb;
+}
+
+.property-summary div {
+  min-width: 0;
+}
+
+.property-summary span {
+  display: block;
+  margin-top: 3px;
+  color: #697989;
+  font-size: 12px;
+}
+
+.property-summary strong {
+  color: #1d57b3;
+  white-space: nowrap;
+}
+
+.property-section {
+  display: grid;
+  gap: 8px;
+}
+
 .delete-dialog button {
   min-height: 32px;
   padding: 0 10px;
@@ -889,10 +951,6 @@ button:disabled {
   .content-grid {
     grid-template-columns: 150px minmax(430px, 1fr);
   }
-
-  .details-panel {
-    display: none;
-  }
 }
 
 @media (max-width: 820px) {
@@ -901,14 +959,13 @@ button:disabled {
   }
 
   .toolbar {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
+    grid-template-columns: 130px minmax(0, 1fr) auto;
     height: auto;
-    padding: 10px;
+    padding: 8px 10px;
   }
 
   .toolbar-actions {
-    justify-self: stretch;
+    justify-self: end;
     justify-content: flex-end;
     flex-wrap: wrap;
   }

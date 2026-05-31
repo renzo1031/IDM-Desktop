@@ -196,6 +196,7 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
   }));
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [deletePromptTaskId, setDeletePromptTaskId] = useState("");
+  const [propertyTaskId, setPropertyTaskId] = useState("");
   const counts = useMemo(() => getTaskCounts(tasksState), [tasksState]);
   const tasks = useMemo(() => filterTasks(tasksState, category), [category, tasksState]);
   const totalSpeed = useMemo(
@@ -208,8 +209,9 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
       ? tasksState.find((task) => task.id === contextMenu.taskId)
       : undefined;
   const deletePromptTask = tasksState.find((task) => task.id === deletePromptTaskId);
-  const remainingBytes = selectedTask
-    ? selectedTask.totalBytes - selectedTask.completedBytes
+  const propertyTask = tasksState.find((task) => task.id === propertyTaskId);
+  const propertyRemainingBytes = propertyTask
+    ? propertyTask.totalBytes - propertyTask.completedBytes
     : 0;
 
   useEffect(() => {
@@ -443,6 +445,19 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     });
   }
 
+  function preventNativeContextMenu(event: ReactMouseEvent<HTMLElement>) {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    event.preventDefault();
+    setContextMenu(null);
+  }
+
+  function stopTaskAction(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+  }
+
   function requestRemoveTask(task: DownloadTask) {
     if (!task.gid) {
       return;
@@ -450,6 +465,12 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
 
     setContextMenu(null);
     setDeletePromptTaskId(task.id);
+  }
+
+  function openTaskProperties(task: DownloadTask) {
+    setSelectedTaskId(task.id);
+    setContextMenu(null);
+    setPropertyTaskId(task.id);
   }
 
   async function handleCreateDownload() {
@@ -766,7 +787,11 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
 
   return (
     <main className="app-shell">
-      <section className="download-window" aria-label="下载管理器主窗口">
+      <section
+        className="download-window"
+        aria-label="下载管理器主窗口"
+        onContextMenu={preventNativeContextMenu}
+      >
         <header className="toolbar">
           <div className="brand">
             <span className="brand-mark">ID</span>
@@ -881,14 +906,14 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
                 const remaining = task.totalBytes - task.completedBytes;
 
                 return (
-                  <button
+                  <div
                     className={
                       selectedTask.id === task.id ? "task-row selected" : "task-row"
                     }
                     key={task.id}
                     onClick={() => setSelectedTaskId(task.id)}
                     onContextMenu={(event) => openTaskContextMenu(event, task)}
-                    type="button"
+                    onDoubleClick={() => openTaskProperties(task)}
                   >
                     <span className="task-name">
                       <strong>{task.fileName}</strong>
@@ -898,112 +923,47 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
                     <span>{formatSpeed(task.downloadSpeed)}</span>
                     <span>{formatRemainingTime(remaining, task.downloadSpeed)}</span>
                     <span className="row-actions">
-                      {task.status === "complete"
-                        ? "打开"
-                        : task.status === "paused"
-                          ? "继续"
-                          : "暂停"}
+                      <button
+                        aria-label={`打开 ${task.fileName}`}
+                        disabled={task.status !== "complete"}
+                        onClick={(event) => {
+                          stopTaskAction(event);
+                          void handleOpenTaskFile(task);
+                        }}
+                        title="打开"
+                        type="button"
+                      >
+                        <FolderOpen size={14} />
+                      </button>
+                      <button
+                        aria-label={`删除 ${task.fileName}`}
+                        onClick={(event) => {
+                          stopTaskAction(event);
+                          requestRemoveTask(task);
+                        }}
+                        title="删除"
+                        type="button"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                      <button
+                        aria-label={`详细 ${task.fileName}`}
+                        onClick={(event) => {
+                          stopTaskAction(event);
+                          openTaskProperties(task);
+                        }}
+                        title="详细"
+                        type="button"
+                      >
+                        <Info size={14} />
+                      </button>
                     </span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
           </section>
 
-          <aside
-            className="details-panel"
-            aria-label="任务详情面板"
-            style={{ overflowY: "auto", scrollbarWidth: "none" }}
-          >
-            <p className="section-label">任务详情</p>
-            {selectedTask ? (
-              <>
-                <h2>{selectedTask.fileName}</h2>
-                <div className="progress-track">
-                  <span style={{ width: `${progressOf(selectedTask)}%` }} />
-                </div>
-                <div className="detail-grid">
-                  <span>
-                    <strong>大小</strong>
-                    {formatBytes(selectedTask.totalBytes)}
-                  </span>
-                  <span>
-                    <strong>已下</strong>
-                    {formatBytes(selectedTask.completedBytes)}
-                  </span>
-                  <span>
-                    <strong>连接</strong>
-                    {selectedTask.connections}
-                  </span>
-                  <span>
-                    <strong>剩余</strong>
-                    {formatBytes(Math.max(0, remainingBytes))}
-                  </span>
-                </div>
-
-                <p className="section-label section-gap">保存目录</p>
-                <p className="path-text">{selectedTask.saveDir}</p>
-
-                <p className="section-label section-gap">下载引擎</p>
-                <div className="engine-card">
-                  <span>内置 aria2</span>
-                  <strong>{selectedTask.resumable ? "支持断点续传" : "普通下载"}</strong>
-                </div>
-
-                <p className="section-label section-gap">本任务设置</p>
-                <div className="readonly-list">
-                  <span>
-                    <strong>线程数</strong>
-                    {selectedTask.options.split}
-                  </span>
-                  <span>
-                    <strong>限速</strong>
-                    {selectedTask.options.speedLimit > 0
-                      ? formatSpeed(selectedTask.options.speedLimit)
-                      : "不限"}
-                  </span>
-                  <span>
-                    <strong>代理</strong>
-                    {selectedTask.options.proxyUrl ?? "直连"}
-                  </span>
-                </div>
-
-                <div className="detail-actions">
-                  {selectedTask.status === "complete" ? (
-                    <button onClick={() => handleOpenTaskFile(selectedTask)} type="button">
-                      <FolderOpen size={15} />
-                      打开
-                    </button>
-                  ) : null}
-                  <button onClick={() => handlePauseTask(selectedTask)} type="button">
-                    <Pause size={15} />
-                    {selectedTask.status === "paused" ? "继续" : "暂停"}
-                  </button>
-                  <button onClick={() => handleRetryTask(selectedTask)} type="button">
-                    <RefreshCw size={15} />
-                    重试
-                  </button>
-                  <button onClick={() => handleOpenTaskDir(selectedTask)} type="button">
-                    <FolderOpen size={15} />
-                    目录
-                  </button>
-                  <button
-                    className="danger-action"
-                    onClick={() => requestRemoveTask(selectedTask)}
-                    type="button"
-                  >
-                    <Trash2 size={15} />
-                    删除
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="details-empty">
-                <h2>等待新建下载任务</h2>
-                <p>输入 HTTP/HTTPS 链接后，任务会显示在这里。</p>
-              </div>
-            )}
-          </aside>
         </div>
 
         <footer className="statusbar">
@@ -1154,8 +1114,7 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
                 </button>
                 <button
                   onClick={() => {
-                    setSelectedTaskId(contextMenuTask.id);
-                    setContextMenu(null);
+                    openTaskProperties(contextMenuTask);
                   }}
                   role="menuitem"
                   type="button"
@@ -1212,6 +1171,129 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
                 </button>
               </>
             )}
+          </div>
+        ) : null}
+        {propertyTask ? (
+          <div className="modal-backdrop">
+            <div
+              aria-label="任务属性"
+              className="task-property-dialog"
+              role="dialog"
+            >
+              <div className="dialog-title">
+                <div>
+                  <strong>任务属性</strong>
+                  <span>{propertyTask.fileName}</span>
+                </div>
+                <button
+                  aria-label="关闭任务属性"
+                  onClick={() => setPropertyTaskId("")}
+                  type="button"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="property-summary">
+                <div>
+                  <h2>{propertyTask.fileName}</h2>
+                  <span>
+                    {propertyTask.status} · {progressOf(propertyTask)}%
+                  </span>
+                </div>
+                <strong>{formatSpeed(propertyTask.downloadSpeed)}</strong>
+              </div>
+
+              <div className="progress-track">
+                <span style={{ width: `${progressOf(propertyTask)}%` }} />
+              </div>
+
+              <div className="detail-grid">
+                <span>
+                  <strong>大小</strong>
+                  {formatBytes(propertyTask.totalBytes)}
+                </span>
+                <span>
+                  <strong>已下</strong>
+                  {formatBytes(propertyTask.completedBytes)}
+                </span>
+                <span>
+                  <strong>连接</strong>
+                  {propertyTask.connections}
+                </span>
+                <span>
+                  <strong>剩余</strong>
+                  {formatBytes(Math.max(0, propertyRemainingBytes))}
+                </span>
+              </div>
+
+              <div className="property-section">
+                <p className="section-label">下载信息</p>
+                <div className="readonly-list">
+                  <span>
+                    <strong>链接</strong>
+                    {propertyTask.url}
+                  </span>
+                  <span>
+                    <strong>保存目录</strong>
+                    {propertyTask.saveDir}
+                  </span>
+                  <span>
+                    <strong>下载引擎</strong>
+                    {propertyTask.resumable ? "支持断点续传" : "普通下载"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="property-section">
+                <p className="section-label">本任务设置</p>
+                <div className="readonly-list">
+                  <span>
+                    <strong>线程数</strong>
+                    {propertyTask.options.split}
+                  </span>
+                  <span>
+                    <strong>限速</strong>
+                    {propertyTask.options.speedLimit > 0
+                      ? formatSpeed(propertyTask.options.speedLimit)
+                      : "不限"}
+                  </span>
+                  <span>
+                    <strong>代理</strong>
+                    {propertyTask.options.proxyUrl ?? "直连"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="detail-actions">
+                {propertyTask.status === "complete" ? (
+                  <button onClick={() => handleOpenTaskFile(propertyTask)} type="button">
+                    <FolderOpen size={15} />
+                    打开
+                  </button>
+                ) : null}
+                <button onClick={() => handlePauseTask(propertyTask)} type="button">
+                  <Pause size={15} />
+                  {propertyTask.status === "paused" ? "继续" : "暂停"}
+                </button>
+                <button onClick={() => handleRetryTask(propertyTask)} type="button">
+                  <RefreshCw size={15} />
+                  重试
+                </button>
+                <button onClick={() => handleOpenTaskDir(propertyTask)} type="button">
+                  <FolderOpen size={15} />
+                  目录
+                </button>
+                <button
+                  className="danger-action"
+                  onClick={() => requestRemoveTask(propertyTask)}
+                  type="button"
+                >
+                  <Trash2 size={15} />
+                  删除
+                </button>
+              </div>
+            </div>
           </div>
         ) : null}
         {deletePromptTask ? (

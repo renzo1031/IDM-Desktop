@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -70,6 +70,17 @@ const pollingTask: DownloadTask = {
   status: "active",
 };
 
+async function findTaskRow(taskPanel: HTMLElement, fileName: string): Promise<HTMLElement> {
+  const taskName = await within(taskPanel).findByText(fileName);
+  const taskRow = taskName.closest(".task-row");
+
+  if (!(taskRow instanceof HTMLElement)) {
+    throw new Error(`未找到 ${fileName} 所在任务行`);
+  }
+
+  return taskRow;
+}
+
 describe("App", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -101,7 +112,7 @@ describe("App", () => {
     vi.mocked(selectDirectory).mockResolvedValue(null);
   });
 
-  it("renders the 980px three-column downloader shell", async () => {
+  it("renders the 980px two-column downloader shell", async () => {
     vi.mocked(listDownloads).mockResolvedValue([createdTask]);
 
     render(<App initialTasks={[]} />);
@@ -111,8 +122,8 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "新建任务" })).toBeInTheDocument();
     expect(screen.getByText("全部")).toBeInTheDocument();
     expect(screen.getByText("下载中")).toBeInTheDocument();
-    expect(screen.getByText("任务详情")).toBeInTheDocument();
-    expect(screen.getByText("内置 aria2")).toBeInTheDocument();
+    expect(screen.queryByLabelText("任务详情面板")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "任务属性" })).not.toBeInTheDocument();
     expect(await screen.findByText(/默认 24 线程/)).toBeInTheDocument();
     expect(screen.getByText(/aria2 已连接/)).toBeInTheDocument();
   });
@@ -149,6 +160,47 @@ describe("App", () => {
     expect(appCss).toMatch(
       /@media \(max-width: 820px\)[\s\S]*?\.toolbar-actions\s*\{[\s\S]*?justify-content:\s*flex-end;/,
     );
+  });
+
+  it("keeps the compact toolbar on one row", () => {
+    render(<App initialTasks={[]} />);
+
+    expect(appCss).toMatch(/\.speed-meter\s*\{[^}]*grid-column:\s*2;/s);
+    expect(appCss).toMatch(/\.toolbar-actions\s*\{[^}]*grid-column:\s*3;/s);
+    expect(appCss).toMatch(
+      /@media \(max-width: 820px\)[\s\S]*?\.toolbar\s*\{[\s\S]*?grid-template-columns:\s*130px minmax\(0,\s*1fr\) auto;/,
+    );
+    expect(appCss).not.toMatch(
+      /@media \(max-width: 820px\)[\s\S]*?\.toolbar\s*\{[\s\S]*?grid-template-rows:\s*auto auto auto;/,
+    );
+  });
+
+  it("uses a slightly smaller and bolder desktop text scale without changing fonts", () => {
+    render(<App initialTasks={[]} />);
+
+    expect(appCss).toMatch(/"Segoe UI"[\s\S]*?"Microsoft YaHei"/);
+    expect(appCss).toMatch(
+      /\.toolbar button,\s*\.task-property-dialog button,\s*\.statusbar button\s*\{[^}]*font-size:\s*12px;[^}]*font-weight:\s*650;/s,
+    );
+    expect(appCss).toMatch(/\.task-row\s*\{[^}]*font-size:\s*12px;/s);
+    expect(appCss).toMatch(/\.task-name strong\s*\{[^}]*font-size:\s*12px;[^}]*font-weight:\s*700;/s);
+    expect(appCss).toMatch(/\.category\s*\{[^}]*font-size:\s*12px;[^}]*font-weight:\s*650;/s);
+  });
+
+  it("prevents the native context menu outside custom task menus", () => {
+    render(<App initialTasks={[]} />);
+
+    const appWindow = screen.getByLabelText("下载管理器主窗口");
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    const dispatchResult = appWindow.dispatchEvent(contextMenuEvent);
+
+    expect(dispatchResult).toBe(false);
+    expect(contextMenuEvent.defaultPrevented).toBe(true);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("creates a download from the URL input", async () => {
@@ -398,17 +450,33 @@ describe("App", () => {
     });
   });
 
-  it("makes the details panel scroll internally without a visible scrollbar", async () => {
+  it("uses a two-column shell without a persistent details panel", async () => {
     vi.mocked(listDownloads).mockResolvedValue([createdTask]);
 
     render(<App initialTasks={[]} />);
 
     expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
-    const detailsPanel = screen.getByLabelText("任务详情面板");
-    const detailsStyle = getComputedStyle(detailsPanel);
+    expect(screen.queryByLabelText("任务详情面板")).not.toBeInTheDocument();
+    expect(appCss).toMatch(
+      /\.content-grid\s*\{[^}]*grid-template-columns:\s*150px minmax\(430px,\s*1fr\);/s,
+    );
+  });
 
-    expect(detailsStyle.overflowY).toBe("auto");
-    expect(detailsStyle.scrollbarWidth).toBe("none");
+  it("makes the task property dialog scroll internally without a visible scrollbar", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listDownloads).mockResolvedValue([createdTask]);
+
+    render(<App initialTasks={[]} />);
+
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    expect(await within(taskPanel).findByText("file.zip")).toBeInTheDocument();
+    await user.dblClick(await findTaskRow(taskPanel, "file.zip"));
+
+    expect(screen.getByRole("dialog", { name: "任务属性" })).toBeInTheDocument();
+    expect(appCss).toMatch(
+      /\.task-property-dialog\s*\{[^}]*max-height:\s*calc\(100vh - 36px\);[^}]*overflow:\s*hidden auto;[^}]*scrollbar-width:\s*none;/s,
+    );
+    expect(appCss).toMatch(/\.task-property-dialog::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
   });
 
   it("lets the frontend compress to the desktop minimum height without hiding the status bar", () => {
@@ -436,17 +504,49 @@ describe("App", () => {
     expect(appCss).toMatch(/\.statusbar\s*\{[^}]*min-height:\s*28px;/s);
   });
 
-  it("pauses the selected task through the backend command", async () => {
+  it("opens task properties from a double click", async () => {
     const user = userEvent.setup();
     vi.mocked(listDownloads).mockResolvedValue([createdTask]);
 
     render(<App />);
 
-    expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
-    const detailsPanel = screen.getByLabelText("任务详情面板");
-    await user.click(within(detailsPanel).getByRole("button", { name: /^暂停$/ }));
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    const taskRow = await findTaskRow(taskPanel, "file.zip");
 
+    await user.dblClick(taskRow);
+
+    const propertyDialog = screen.getByRole("dialog", { name: "任务属性" });
+    expect(within(propertyDialog).getAllByText("file.zip")).not.toHaveLength(0);
+    expect(within(propertyDialog).getByText(createdTask.url)).toBeInTheDocument();
+    expect(within(propertyDialog).getByText("D:\\Downloads")).toBeInTheDocument();
+
+    await user.click(within(propertyDialog).getByRole("button", { name: /^暂停$/ }));
     expect(pauseDownload).toHaveBeenCalledWith("gid-1");
+  });
+
+  it("shows open delete and detail action buttons in each task row", async () => {
+    const user = userEvent.setup();
+    const completeTask: DownloadTask = {
+      ...createdTask,
+      status: "complete",
+      completedBytes: createdTask.totalBytes,
+    };
+    vi.mocked(listDownloads).mockResolvedValue([completeTask]);
+
+    render(<App initialTasks={[]} />);
+
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    const taskRow = await findTaskRow(taskPanel, "file.zip");
+
+    await user.click(within(taskRow).getByRole("button", { name: "打开 file.zip" }));
+    expect(openDownloadFile).toHaveBeenCalledWith("gid-1");
+
+    await user.click(within(taskRow).getByRole("button", { name: "详细 file.zip" }));
+    expect(screen.getByRole("dialog", { name: "任务属性" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭任务属性" }));
+
+    await user.click(within(taskRow).getByRole("button", { name: "删除 file.zip" }));
+    expect(screen.getByRole("dialog", { name: "删除下载任务" })).toBeInTheDocument();
   });
 
   it("uses toolbar controls for the selected task", async () => {
@@ -478,11 +578,11 @@ describe("App", () => {
     render(<App initialTasks={[]} />);
 
     const taskPanel = screen.getByLabelText("下载任务列表");
-    expect(await within(taskPanel).findByText("file.zip")).toBeInTheDocument();
+    const taskRow = await findTaskRow(taskPanel, "file.zip");
 
     await user.pointer({
       keys: "[MouseRight]",
-      target: within(taskPanel).getByRole("button", { name: /file\.zip/ }),
+      target: taskRow,
     });
 
     const menu = screen.getByRole("menu", { name: "任务右键菜单" });
@@ -495,6 +595,52 @@ describe("App", () => {
 
     await user.click(within(menu).getByRole("menuitem", { name: "开始" }));
     expect(resumeDownload).toHaveBeenCalledWith("gid-1");
+  });
+
+  it("closes an existing custom context menu when right clicking a disabled context area", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listDownloads).mockResolvedValue([createdTask]);
+
+    render(<App initialTasks={[]} />);
+
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    const taskRow = await findTaskRow(taskPanel, "file.zip");
+
+    await user.pointer({
+      keys: "[MouseRight]",
+      target: taskRow,
+    });
+    expect(screen.getByRole("menu", { name: "任务右键菜单" })).toBeInTheDocument();
+
+    const toolbar = document.querySelector(".toolbar");
+    expect(toolbar).toBeInstanceOf(HTMLElement);
+
+    const dispatchResult = fireEvent.contextMenu(toolbar as HTMLElement);
+
+    expect(dispatchResult).toBe(false);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("opens task properties from the context menu", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listDownloads).mockResolvedValue([createdTask]);
+
+    render(<App initialTasks={[]} />);
+
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    const taskRow = await findTaskRow(taskPanel, "file.zip");
+
+    await user.pointer({
+      keys: "[MouseRight]",
+      target: taskRow,
+    });
+    await user.click(
+      within(screen.getByRole("menu", { name: "任务右键菜单" })).getByRole("menuitem", {
+        name: "任务属性",
+      }),
+    );
+
+    expect(screen.getByRole("dialog", { name: "任务属性" })).toBeInTheDocument();
   });
 
   it("opens compact queue actions from the empty task list context menu", async () => {
@@ -562,7 +708,7 @@ describe("App", () => {
     render(<App initialTasks={[]} />);
 
     expect(await screen.findByText("暂无任务")).toBeInTheDocument();
-    expect(screen.getByText("等待新建下载任务")).toBeInTheDocument();
+    expect(screen.queryByText("等待新建下载任务")).not.toBeInTheDocument();
   });
 
   it("starts with an empty real download list instead of sample tasks", async () => {
@@ -644,21 +790,23 @@ describe("App", () => {
 
     render(<App initialTasks={[]} />);
 
-    expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
-    const detailsPanel = screen.getByLabelText("任务详情面板");
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    const taskRow = await findTaskRow(taskPanel, "file.zip");
+    await user.dblClick(taskRow);
+    const propertyDialog = screen.getByRole("dialog", { name: "任务属性" });
 
-    await user.click(within(detailsPanel).getByRole("button", { name: "打开" }));
+    await user.click(within(propertyDialog).getByRole("button", { name: "打开" }));
     expect(openDownloadFile).toHaveBeenCalledWith("gid-1");
 
-    await user.click(within(detailsPanel).getByRole("button", { name: "目录" }));
+    await user.click(within(propertyDialog).getByRole("button", { name: "目录" }));
     expect(openDownloadDir).toHaveBeenCalledWith("gid-1");
 
-    expect(within(detailsPanel).getByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(within(propertyDialog).getByRole("button", { name: "删除" })).toBeInTheDocument();
     expect(
-      within(detailsPanel).queryByRole("button", { name: "删文件" }),
+      within(propertyDialog).queryByRole("button", { name: "删文件" }),
     ).not.toBeInTheDocument();
 
-    await user.click(within(detailsPanel).getByRole("button", { name: "删除" }));
+    await user.click(within(propertyDialog).getByRole("button", { name: "删除" }));
     const deleteDialog = screen.getByRole("dialog", { name: "删除下载任务" });
     expect(within(deleteDialog).getByText("file.zip")).toBeInTheDocument();
     expect(
@@ -691,10 +839,13 @@ describe("App", () => {
 
     render(<App initialTasks={[]} />);
 
-    expect(await screen.findByText("网络中断")).toBeInTheDocument();
-    const detailsPanel = screen.getByLabelText("任务详情面板");
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    expect(await within(taskPanel).findByText("网络中断")).toBeInTheDocument();
+    const taskRow = await findTaskRow(taskPanel, "file.zip");
+    await user.dblClick(taskRow);
+    const propertyDialog = screen.getByRole("dialog", { name: "任务属性" });
 
-    await user.click(within(detailsPanel).getByRole("button", { name: "重试" }));
+    await user.click(within(propertyDialog).getByRole("button", { name: "重试" }));
 
     expect(retryDownload).toHaveBeenCalledWith("failed-gid");
     expect(await screen.findAllByText("retried-file.zip")).not.toHaveLength(0);
