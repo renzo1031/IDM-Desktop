@@ -40,6 +40,8 @@ pub struct AddUriOptions {
     pub max_connection_per_server: String,
     pub min_split_size: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_download_limit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub all_proxy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pause: Option<String>,
@@ -157,6 +159,7 @@ pub fn add_uri_options(
     save_dir: impl Into<String>,
     file_name: Option<String>,
     split: u32,
+    speed_limit: u64,
     proxy_url: Option<String>,
     config: &Aria2Config,
 ) -> AddUriOptions {
@@ -168,6 +171,7 @@ pub fn add_uri_options(
         split: safe_split.to_string(),
         max_connection_per_server: config.max_connection_per_server.to_string(),
         min_split_size: config.min_split_size.clone(),
+        max_download_limit: (speed_limit > 0).then(|| speed_limit.to_string()),
         all_proxy: proxy_url,
         pause: None,
         continue_download: "true".to_string(),
@@ -202,6 +206,7 @@ pub fn build_tell_version_payload(config: &Aria2Config) -> Value {
     })
 }
 
+#[cfg(test)]
 pub fn build_global_stat_payload(config: &Aria2Config) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -313,13 +318,77 @@ fn map_status(status: &str) -> DownloadStatus {
     }
 }
 
+pub fn normalize_error_text(message: &str) -> String {
+    let lower = message.to_ascii_lowercase();
+
+    if lower.contains("invalid range header") {
+        return "服务器不支持断点续传，请降低线程数或重新下载".to_string();
+    }
+
+    if lower.contains("name resolution")
+        || lower.contains("could not resolve")
+        || lower.contains("dns")
+        || lower.contains("resolve host")
+    {
+        return "DNS 解析失败，请检查链接域名或网络连接".to_string();
+    }
+
+    if lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("connection timeout")
+    {
+        return "网络连接超时，请检查网络或稍后重试".to_string();
+    }
+
+    if lower.contains("status=403") || lower.contains("status 403") || lower.contains("403") {
+        return "服务器拒绝访问（403），请检查链接权限、Cookie 或代理设置".to_string();
+    }
+
+    if lower.contains("status=404") || lower.contains("status 404") || lower.contains("404") {
+        return "下载地址不存在（404），请确认链接是否有效".to_string();
+    }
+
+    if lower.contains("status=5")
+        || lower.contains("status 5")
+        || lower.contains(" 5xx")
+        || lower.contains("503")
+        || lower.contains("502")
+        || lower.contains("500")
+    {
+        let code = ["500", "502", "503", "504"]
+            .iter()
+            .find(|code| lower.contains(**code))
+            .copied()
+            .unwrap_or("5xx");
+        return format!("服务器暂时不可用（{code}），请稍后重试");
+    }
+
+    if lower.contains("no space left") || lower.contains("disk full") {
+        return "磁盘空间不足，请清理空间或更换下载目录".to_string();
+    }
+
+    if lower.contains("permission denied")
+        || lower.contains("access is denied")
+        || lower.contains("denied")
+    {
+        return "没有写入权限，请更换下载目录或以管理员权限运行".to_string();
+    }
+
+    if lower.contains("gid") && lower.contains("not found") {
+        return "任务已不在 aria2 队列中，请刷新列表或重新下载".to_string();
+    }
+
+    message.to_string()
+}
+
 fn normalize_error_message(error_message: Option<String>) -> (Option<String>, bool) {
     match error_message {
-        Some(message) if message.to_ascii_lowercase().contains("invalid range header") => (
-            Some("服务器不支持断点续传，请降低线程数或重新下载".to_string()),
-            false,
-        ),
-        other => (other, true),
+        Some(message) => {
+            let normalized = normalize_error_text(&message);
+            let resumable = !message.to_ascii_lowercase().contains("invalid range header");
+            (Some(normalized), resumable)
+        }
+        None => (None, true),
     }
 }
 
@@ -379,6 +448,7 @@ mod tests {
             "D:\\Downloads",
             Some("file.iso".to_string()),
             64,
+            0,
             None,
             &config,
         );
@@ -397,6 +467,7 @@ mod tests {
             "D:\\Downloads",
             None,
             8,
+            0,
             Some("http://127.0.0.1:7890".to_string()),
             &config,
         );
@@ -408,9 +479,19 @@ mod tests {
     }
 
     #[test]
+    fn add_uri_options_include_speed_limit_when_configured() {
+        let config = Aria2Config::default();
+        let options = add_uri_options("D:\\Downloads", None, 8, 524_288, None, &config);
+
+        let value = serde_json::to_value(options).unwrap();
+
+        assert_eq!(value["maxDownloadLimit"], "524288");
+    }
+
+    #[test]
     fn add_uri_payload_uses_token_and_aria2_method() {
         let config = Aria2Config::default();
-        let options = add_uri_options("D:\\Downloads", None, 16, None, &config);
+        let options = add_uri_options("D:\\Downloads", None, 16, 0, None, &config);
         let payload = build_add_uri_payload("https://example.com/file.zip", &options, &config);
 
         assert_eq!(payload["method"], "aria2.addUri");
@@ -582,6 +663,46 @@ mod tests {
         assert_eq!(
             task.error_message,
             Some("服务器不支持断点续传，请降低线程数或重新下载".to_string())
+        );
+    }
+
+    #[test]
+    fn normalizes_common_network_and_http_errors() {
+        assert_eq!(
+            normalize_error_text("Name resolution for example.invalid failed"),
+            "DNS 解析失败，请检查链接域名或网络连接"
+        );
+        assert_eq!(
+            normalize_error_text("Timeout while connecting to server"),
+            "网络连接超时，请检查网络或稍后重试"
+        );
+        assert_eq!(
+            normalize_error_text("The response status is not successful. status=403"),
+            "服务器拒绝访问（403），请检查链接权限、Cookie 或代理设置"
+        );
+        assert_eq!(
+            normalize_error_text("The response status is not successful. status=404"),
+            "下载地址不存在（404），请确认链接是否有效"
+        );
+        assert_eq!(
+            normalize_error_text("The response status is not successful. status=503"),
+            "服务器暂时不可用（503），请稍后重试"
+        );
+    }
+
+    #[test]
+    fn normalizes_storage_and_task_errors() {
+        assert_eq!(
+            normalize_error_text("No space left on device"),
+            "磁盘空间不足，请清理空间或更换下载目录"
+        );
+        assert_eq!(
+            normalize_error_text("Permission denied: C:\\Downloads"),
+            "没有写入权限，请更换下载目录或以管理员权限运行"
+        );
+        assert_eq!(
+            normalize_error_text("GID abc is not found"),
+            "任务已不在 aria2 队列中，请刷新列表或重新下载"
         );
     }
 }

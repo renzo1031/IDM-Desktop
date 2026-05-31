@@ -1,7 +1,7 @@
 use crate::aria2::{
     build_add_uri_payload, build_pause_payload, build_remove_payload, build_resume_payload,
-    build_shutdown_payload, build_tell_status_payload, prepare_launch_plan, AddUriOptions,
-    Aria2Config, Aria2TaskStatus,
+    build_shutdown_payload, build_tell_version_payload, build_tell_status_payload,
+    normalize_error_text, prepare_launch_plan, AddUriOptions, Aria2Config, Aria2TaskStatus,
 };
 use crate::models::{DownloadStatus, DownloadTask, DownloadTaskOptions};
 use crate::store::TaskStore;
@@ -96,6 +96,7 @@ impl DownloadService {
 
     pub async fn add_uri(&self, url: &str, options: &AddUriOptions) -> Result<String, String> {
         self.ensure_started().await?;
+        ensure_download_dir_ready(&options.dir)?;
         let payload = build_add_uri_payload(url, options, &self.inner.config);
         let gid = self.rpc::<String>(payload).await?;
         if let Ok(task) = self.tell_status(&gid).await {
@@ -140,7 +141,7 @@ impl DownloadService {
                     let mut failed_task = stored_task;
                     failed_task.status = DownloadStatus::Error;
                     failed_task.download_speed = 0;
-                    failed_task.error_message = Some(err);
+                    failed_task.error_message = Some(normalize_error_text(&err));
                     self.inner.store.upsert(failed_task.clone())?;
                     tasks.push(failed_task);
                 }
@@ -246,12 +247,7 @@ impl DownloadService {
     }
 
     async fn rpc_ready(&self) -> bool {
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": "get-version",
-            "method": "aria2.getVersion",
-            "params": [format!("token:{}", self.inner.config.secret)]
-        });
+        let payload = build_tell_version_payload(&self.inner.config);
         self.rpc::<Value>(payload).await.is_ok()
     }
 
@@ -266,15 +262,15 @@ impl DownloadService {
             .json(&payload)
             .send()
             .await
-            .map_err(|err| format!("aria2 RPC 请求失败：{err}"))?;
+            .map_err(|err| normalize_error_text(&format!("aria2 RPC 请求失败：{err}")))?;
         let body = response
             .json::<RpcResponse<T>>()
             .await
-            .map_err(|err| format!("aria2 RPC 响应解析失败：{err}"))?;
+            .map_err(|err| normalize_error_text(&format!("aria2 RPC 响应解析失败：{err}")))?;
 
         match (body.result, body.error) {
             (Some(result), _) => Ok(result),
-            (_, Some(err)) => Err(format!("aria2 RPC 错误：{}", err.message)),
+            (_, Some(err)) => Err(normalize_error_text(&err.message)),
             _ => Err("aria2 RPC 响应缺少 result".to_string()),
         }
     }
@@ -331,7 +327,11 @@ pub fn request_options(options: &AddUriOptions) -> DownloadTaskOptions {
             .max_connection_per_server
             .parse::<u32>()
             .unwrap_or(split),
-        speed_limit: 0,
+        speed_limit: options
+            .max_download_limit
+            .as_deref()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0),
         proxy_url: options.all_proxy.clone(),
     }
 }
@@ -359,6 +359,7 @@ pub fn restore_options_from_task(task: &DownloadTask, config: &Aria2Config) -> A
         task.save_dir.clone(),
         Some(task.file_name.clone()),
         task.options.split,
+        task.options.speed_limit,
         task.options.proxy_url.clone(),
         config,
     );
@@ -405,6 +406,18 @@ pub fn rebind_restored_task(mut restored: DownloadTask, stored: &DownloadTask) -
 
 pub fn download_file_path_from_task(task: &DownloadTask) -> PathBuf {
     PathBuf::from(&task.save_dir).join(&task.file_name)
+}
+
+pub fn ensure_download_dir_ready(save_dir: &str) -> Result<(), String> {
+    let path = std::path::Path::new(save_dir);
+
+    if path.exists() && !path.is_dir() {
+        return Err(format!("保存目录路径指向文件：{}", path.display()));
+    }
+
+    std::fs::create_dir_all(path).map_err(|err| {
+        normalize_error_text(&format!("无法创建保存目录 {}：{err}", path.display()))
+    })
 }
 
 pub fn delete_file_if_present(file_path: &std::path::Path) -> Result<(), String> {
@@ -482,6 +495,35 @@ mod tests {
     }
 
     #[test]
+    fn ensure_download_dir_ready_creates_missing_directories() {
+        let root =
+            std::env::temp_dir().join(format!("idm-download-dir-test-{}", uuid::Uuid::new_v4()));
+        let download_dir = root.join("nested").join("downloads");
+
+        ensure_download_dir_ready(&download_dir.display().to_string()).unwrap();
+
+        assert!(download_dir.is_dir());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ensure_download_dir_ready_rejects_file_paths() {
+        let root =
+            std::env::temp_dir().join(format!("idm-download-dir-test-{}", uuid::Uuid::new_v4()));
+        let file_path = root.join("download-target");
+
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&file_path, "not a directory").unwrap();
+
+        let err = ensure_download_dir_ready(&file_path.display().to_string()).unwrap_err();
+
+        assert!(err.contains("保存目录路径指向文件"));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn request_options_preserve_split_and_proxy_metadata() {
         let options = AddUriOptions {
             dir: "D:\\Downloads".to_string(),
@@ -489,6 +531,7 @@ mod tests {
             split: "12".to_string(),
             max_connection_per_server: "12".to_string(),
             min_split_size: "1M".to_string(),
+            max_download_limit: Some("524288".to_string()),
             all_proxy: Some("http://127.0.0.1:7890".to_string()),
             pause: None,
             continue_download: "true".to_string(),
@@ -498,6 +541,7 @@ mod tests {
 
         assert_eq!(task_options.split, 12);
         assert_eq!(task_options.max_connection_per_server, 12);
+        assert_eq!(task_options.speed_limit, 524_288);
         assert_eq!(
             task_options.proxy_url,
             Some("http://127.0.0.1:7890".to_string())
@@ -539,7 +583,7 @@ mod tests {
         task.options = DownloadTaskOptions {
             split: 12,
             max_connection_per_server: 12,
-            speed_limit: 0,
+            speed_limit: 524_288,
             proxy_url: Some("http://127.0.0.1:7890".to_string()),
         };
 
@@ -548,6 +592,7 @@ mod tests {
         assert_eq!(options.dir, "E:\\Media");
         assert_eq!(options.out, Some("movie.iso".to_string()));
         assert_eq!(options.split, "12");
+        assert_eq!(options.max_download_limit, Some("524288".to_string()));
         assert_eq!(options.all_proxy, Some("http://127.0.0.1:7890".to_string()));
         assert_eq!(options.pause, Some("true".to_string()));
         assert_eq!(options.continue_download, "true");

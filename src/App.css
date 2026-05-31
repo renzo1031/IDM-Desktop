@@ -32,6 +32,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -408,14 +413,13 @@ button {
   background: transparent;
 }
 
-.settings-panel {
+.settings-panel,
+.task-options-panel {
   position: absolute;
   right: 38px;
   bottom: 34px;
   z-index: 3;
-  width: min(560px, calc(100% - 56px));
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) 82px minmax(150px, 1fr) auto;
   align-items: end;
   gap: 8px;
   padding: 10px;
@@ -425,7 +429,20 @@ button {
   box-shadow: 0 14px 32px rgba(37, 50, 64, 0.18);
 }
 
-.settings-panel label {
+.settings-panel {
+  width: min(560px, calc(100% - 56px));
+  grid-template-columns: minmax(150px, 1fr) 82px minmax(150px, 1fr) auto;
+}
+
+.task-options-panel {
+  top: 56px;
+  bottom: auto;
+  width: min(520px, calc(100% - 56px));
+  grid-template-columns: minmax(170px, 1fr) 88px 110px;
+}
+
+.settings-panel label,
+.task-options-panel label {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -433,7 +450,8 @@ button {
   font-size: 12px;
 }
 
-.settings-panel input {
+.settings-panel input,
+.task-options-panel input {
   min-width: 0;
   height: 28px;
   padding: 0 8px;
@@ -503,6 +521,13 @@ button {
   }
 
   .settings-panel {
+    right: 18px;
+    left: 18px;
+    width: auto;
+    grid-template-columns: minmax(0, 1fr) 82px;
+  }
+
+  .task-options-panel {
     right: 18px;
     left: 18px;
     width: auto;

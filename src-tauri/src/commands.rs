@@ -8,6 +8,7 @@ use tauri::State;
 #[cfg(not(test))]
 use tauri::Manager;
 
+#[cfg(test)]
 pub fn current_app_status() -> AppStatus {
     app_status_for_engine(EngineStatus::Bundled, &Aria2Config::default())
 }
@@ -37,6 +38,7 @@ pub struct CreateDownloadInput {
     pub save_dir: String,
     pub file_name: Option<String>,
     pub split: Option<u32>,
+    pub speed_limit: Option<u64>,
     pub proxy_url: Option<String>,
 }
 
@@ -88,6 +90,7 @@ pub fn build_create_download_request(
             .map(|name| name.trim().to_string())
             .filter(|name| !name.is_empty()),
         input.split.unwrap_or(config.default_split),
+        input.speed_limit.unwrap_or(0),
         input
             .proxy_url
             .as_ref()
@@ -108,6 +111,7 @@ pub fn retry_input_from_task(task: &crate::models::DownloadTask) -> CreateDownlo
         save_dir: task.save_dir.clone(),
         file_name: Some(task.file_name.clone()),
         split: Some(task.options.split),
+        speed_limit: Some(task.options.speed_limit),
         proxy_url: task.options.proxy_url.clone(),
     }
 }
@@ -247,6 +251,7 @@ mod tests {
             save_dir: "D:\\Downloads".to_string(),
             file_name: None,
             split: None,
+            speed_limit: None,
             proxy_url: None,
         };
 
@@ -262,6 +267,7 @@ mod tests {
             save_dir: "D:\\Downloads".to_string(),
             file_name: None,
             split: None,
+            speed_limit: None,
             proxy_url: None,
         };
 
@@ -280,6 +286,7 @@ mod tests {
             save_dir: "D:\\Downloads".to_string(),
             file_name: None,
             split: Some(8),
+            speed_limit: None,
             proxy_url: Some(" http://127.0.0.1:7890 ".to_string()),
         };
 
@@ -298,6 +305,7 @@ mod tests {
             save_dir: "D:\\Downloads".to_string(),
             file_name: None,
             split: None,
+            speed_limit: None,
             proxy_url: Some("ftp://127.0.0.1:7890".to_string()),
         };
 
@@ -337,9 +345,29 @@ mod tests {
         assert_eq!(input.save_dir, "D:\\Downloads");
         assert_eq!(input.file_name, Some("archive.zip".to_string()));
         assert_eq!(input.split, Some(8));
+        assert_eq!(input.speed_limit, Some(0));
         assert_eq!(
             input.proxy_url,
             Some("http://127.0.0.1:7890".to_string())
+        );
+    }
+
+    #[test]
+    fn create_download_input_passes_speed_limit_to_aria2_options() {
+        let input = CreateDownloadInput {
+            url: "https://example.com/file.zip".to_string(),
+            save_dir: "D:\\Downloads".to_string(),
+            file_name: None,
+            split: Some(4),
+            speed_limit: Some(524_288),
+            proxy_url: None,
+        };
+
+        let request = build_create_download_request(&input, &Aria2Config::default()).unwrap();
+
+        assert_eq!(
+            request.options.max_download_limit,
+            Some("524288".to_string())
         );
     }
 }

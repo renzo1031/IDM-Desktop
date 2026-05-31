@@ -53,6 +53,19 @@ describe("appApi", () => {
     expect(task.options.proxyUrl).toBe("http://127.0.0.1:7890");
   });
 
+  it("accepts per-task speed limits in fallback download creation", async () => {
+    const task = await createDownload({
+      url: "https://example.com/limited.zip",
+      saveDir: "D:\\Downloads",
+      split: 4,
+      speedLimit: 512 * 1024,
+    });
+
+    expect(task.options.split).toBe(4);
+    expect(task.options.maxConnectionPerServer).toBe(4);
+    expect(task.options.speedLimit).toBe(512 * 1024);
+  });
+
   it("keeps fallback downloads in memory for browser previews", async () => {
     const task = await createDownload({
       url: "https://example.com/preview.zip",

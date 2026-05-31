@@ -42,6 +42,7 @@ export interface CreateDownloadInput {
   saveDir: string;
   fileName?: string;
   split?: number;
+  speedLimit?: number;
   proxyUrl?: string;
 }
 
@@ -78,7 +79,7 @@ export async function createDownload(input: CreateDownloadInput): Promise<Downlo
       options: {
         split: input.split ?? 16,
         maxConnectionPerServer: input.split ?? 16,
-        speedLimit: 0,
+        speedLimit: input.speedLimit ?? 0,
         proxyUrl: input.proxyUrl?.trim() || null,
       },
     };

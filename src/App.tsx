@@ -4,6 +4,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  SlidersHorizontal,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -182,8 +183,14 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
   const [selectedTaskId, setSelectedTaskId] = useState(initialTasks[0]?.id ?? "");
   const [appStatus, setAppStatus] = useState<AppStatus>(initialAppStatus);
   const [errorMessage, setErrorMessage] = useState("");
+  const [taskOptionsOpen, setTaskOptionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [downloadSettings, setDownloadSettings] = useState(loadSavedSettings);
+  const [taskDraft, setTaskDraft] = useState(() => ({
+    saveDir: "",
+    split: "",
+    speedLimitKib: "",
+  }));
   const [settingsDraft, setSettingsDraft] = useState(() => ({
     defaultSaveDir: downloadSettings.defaultSaveDir,
     defaultSplit: String(downloadSettings.defaultSplit),
@@ -292,10 +299,20 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
 
     setErrorMessage("");
     try {
+      const taskSaveDir = taskDraft.saveDir.trim();
+      const taskSplit = taskDraft.split.trim()
+        ? clampSplit(Number(taskDraft.split))
+        : downloadSettings.defaultSplit;
+      const speedLimitKib = Number(taskDraft.speedLimitKib.trim());
+      const speedLimit =
+        Number.isFinite(speedLimitKib) && speedLimitKib > 0
+          ? Math.round(speedLimitKib * 1024)
+          : 0;
       const createInput = {
         url: nextUrl,
-        saveDir: downloadSettings.defaultSaveDir,
-        split: downloadSettings.defaultSplit,
+        saveDir: taskSaveDir || downloadSettings.defaultSaveDir,
+        split: taskSplit,
+        ...(speedLimit > 0 ? { speedLimit } : {}),
         ...(downloadSettings.proxyUrl ? { proxyUrl: downloadSettings.proxyUrl } : {}),
       };
       const task = await createDownload(createInput);
@@ -324,6 +341,32 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
     }
   }
 
+  async function handleStartSelectedTask() {
+    if (!selectedTask?.gid) {
+      return;
+    }
+
+    try {
+      await resumeDownload(selectedTask.gid);
+      await refreshDownloads();
+    } catch (error) {
+      setActionError(error);
+    }
+  }
+
+  async function handlePauseSelectedTask() {
+    if (!selectedTask?.gid) {
+      return;
+    }
+
+    try {
+      await pauseDownload(selectedTask.gid);
+      await refreshDownloads();
+    } catch (error) {
+      setActionError(error);
+    }
+  }
+
   async function handleRemoveTask(task: DownloadTask) {
     if (!task.gid) {
       return;
@@ -341,6 +384,14 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
     } catch (error) {
       setActionError(error);
     }
+  }
+
+  async function handleRemoveSelectedTask() {
+    if (!selectedTask) {
+      return;
+    }
+
+    await handleRemoveTask(selectedTask);
   }
 
   async function handleRemoveTaskWithFile(task: DownloadTask) {
@@ -440,11 +491,27 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
               <Plus size={16} />
               新建
             </button>
-            <button type="button">
+            <button
+              aria-expanded={taskOptionsOpen}
+              onClick={() => setTaskOptionsOpen((open) => !open)}
+              type="button"
+            >
+              <SlidersHorizontal size={15} />
+              任务参数
+            </button>
+            <button
+              disabled={!selectedTask?.gid}
+              onClick={handleStartSelectedTask}
+              type="button"
+            >
               <Play size={15} />
               开始
             </button>
-            <button type="button">
+            <button
+              disabled={!selectedTask?.gid}
+              onClick={handlePauseSelectedTask}
+              type="button"
+            >
               <Pause size={15} />
               暂停
             </button>
@@ -627,7 +694,12 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
           >
             <Settings size={15} />
           </button>
-          <button aria-label="删除任务" type="button">
+          <button
+            aria-label="删除任务"
+            disabled={!selectedTask?.gid}
+            onClick={handleRemoveSelectedTask}
+            type="button"
+          >
             <Trash2 size={15} />
           </button>
         </footer>
@@ -677,6 +749,48 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
             <button onClick={handleSaveSettings} type="button">
               保存设置
             </button>
+          </form>
+        ) : null}
+        {taskOptionsOpen ? (
+          <form className="task-options-panel" onSubmit={(event) => event.preventDefault()}>
+            <label>
+              本任务保存目录
+              <input
+                aria-label="本任务保存目录"
+                onChange={(event) =>
+                  setTaskDraft((current) => ({ ...current, saveDir: event.target.value }))
+                }
+                placeholder={downloadSettings.defaultSaveDir}
+                value={taskDraft.saveDir}
+              />
+            </label>
+            <label>
+              本任务线程数
+              <input
+                aria-label="本任务线程数"
+                inputMode="numeric"
+                onChange={(event) =>
+                  setTaskDraft((current) => ({ ...current, split: event.target.value }))
+                }
+                placeholder={String(downloadSettings.defaultSplit)}
+                value={taskDraft.split}
+              />
+            </label>
+            <label>
+              本任务限速 KB/s
+              <input
+                aria-label="本任务限速 KB/s"
+                inputMode="numeric"
+                onChange={(event) =>
+                  setTaskDraft((current) => ({
+                    ...current,
+                    speedLimitKib: event.target.value,
+                  }))
+                }
+                placeholder="不限"
+                value={taskDraft.speedLimitKib}
+              />
+            </label>
           </form>
         ) : null}
       </section>

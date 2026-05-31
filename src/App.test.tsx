@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -11,6 +11,7 @@ import {
   pauseDownload,
   removeDownload,
   retryDownload,
+  resumeDownload,
 } from "./api/appApi";
 import type { DownloadTask } from "./types/download";
 
@@ -56,6 +57,7 @@ const pollingTask: DownloadTask = {
 
 describe("App", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     window.localStorage.clear();
     vi.mocked(getAppStatus).mockResolvedValue({
@@ -145,6 +147,27 @@ describe("App", () => {
     expect(screen.getByText(/代理已启用/)).toBeInTheDocument();
   });
 
+  it("uses per-task save directory, split, and speed limit when provided", async () => {
+    const user = userEvent.setup();
+    render(<App initialTasks={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "任务参数" }));
+    await user.type(screen.getByLabelText("本任务保存目录"), "F:\\Downloads\\Single");
+    await user.clear(screen.getByLabelText("本任务线程数"));
+    await user.type(screen.getByLabelText("本任务线程数"), "6");
+    await user.type(screen.getByLabelText("本任务限速 KB/s"), "512");
+
+    await user.type(screen.getByPlaceholderText("粘贴下载链接..."), createdTask.url);
+    await user.click(screen.getByRole("button", { name: /新建/ }));
+
+    expect(createDownload).toHaveBeenCalledWith({
+      url: createdTask.url,
+      saveDir: "F:\\Downloads\\Single",
+      split: 6,
+      speedLimit: 524288,
+    });
+  });
+
   it("pauses the selected task through the backend command", async () => {
     const user = userEvent.setup();
     vi.mocked(listDownloads).mockResolvedValue([createdTask]);
@@ -156,6 +179,28 @@ describe("App", () => {
     await user.click(within(detailsPanel).getByRole("button", { name: /^暂停$/ }));
 
     expect(pauseDownload).toHaveBeenCalledWith("gid-1");
+  });
+
+  it("uses toolbar controls for the selected task", async () => {
+    const user = userEvent.setup();
+    const pausedTask: DownloadTask = {
+      ...createdTask,
+      status: "paused",
+    };
+    vi.mocked(listDownloads).mockResolvedValue([pausedTask]);
+
+    render(<App initialTasks={[]} />);
+
+    expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "开始" }));
+    expect(resumeDownload).toHaveBeenCalledWith("gid-1");
+
+    await user.click(screen.getByRole("button", { name: "暂停" }));
+    expect(pauseDownload).toHaveBeenCalledWith("gid-1");
+
+    await user.click(screen.getByRole("button", { name: "删除任务" }));
+    expect(removeDownload).toHaveBeenCalledWith("gid-1");
   });
 
   it("keeps the shell usable when there are no restored downloads", async () => {
@@ -177,6 +222,7 @@ describe("App", () => {
   });
 
   it("polls backend downloads and refreshes visible progress", async () => {
+    vi.useFakeTimers();
     vi.mocked(listDownloads)
       .mockResolvedValueOnce([pollingTask])
       .mockResolvedValue([
@@ -191,10 +237,15 @@ describe("App", () => {
     render(<App initialTasks={[]} pollIntervalMs={20} />);
 
     const taskPanel = screen.getByLabelText("下载任务列表");
-    expect(await within(taskPanel).findByText("polling.zip")).toBeInTheDocument();
+    await act(async () => {});
+    expect(within(taskPanel).getByText("polling.zip")).toBeInTheDocument();
     expect(within(taskPanel).getByText("0%")).toBeInTheDocument();
-    expect(await within(taskPanel).findByText("50%")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(within(taskPanel).getByText("50%")).toBeInTheDocument();
     expect(listDownloads).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 
   it("marks aria2 as offline when polling downloads fails", async () => {
