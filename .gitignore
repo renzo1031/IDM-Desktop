@@ -1,0 +1,8 @@
+.superpowers/
+.playwright-mcp/
+node_modules/
+dist/
+target/
+.env
+.env.*
+!.env.example
