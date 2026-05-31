@@ -901,7 +901,12 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
       >
         <header className="toolbar">
           <div className="brand">
-            <span className="brand-mark">ID</span>
+            <img
+              alt=""
+              aria-hidden="true"
+              className="brand-logo"
+              src="/logo-512.png"
+            />
             <span>IDM Desktop</span>
           </div>
           <div className="toolbar-actions">

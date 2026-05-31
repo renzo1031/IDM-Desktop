@@ -199,15 +199,12 @@ button:disabled {
   font-weight: 700;
 }
 
-.brand-mark {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  color: var(--primary-on-accent);
-  background: var(--accent);
-  font-size: 12px;
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .toolbar-actions {
