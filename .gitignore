@@ -2,7 +2,13 @@
 .playwright-mcp/
 node_modules/
 dist/
+dist-ssr/
 target/
+*.local
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/
 .env
 .env.*
 !.env.example
