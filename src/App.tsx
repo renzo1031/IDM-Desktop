@@ -1352,7 +1352,6 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
               <div className="dialog-title">
                 <div>
                   <strong>设置</strong>
-                  <span>下载、连接、代理与文件规则</span>
                 </div>
                 <button
                   aria-label="关闭设置"

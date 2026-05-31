@@ -621,12 +621,12 @@ button:disabled {
 }
 
 .settings-dialog {
-  width: min(660px, 100%);
+  width: min(620px, 100%);
   max-height: calc(100vh - 36px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  padding: 16px;
+  gap: 10px;
+  padding: 14px;
   border: 1px solid #b9c6d3;
   border-radius: 8px;
   background: #fff;
@@ -634,14 +634,15 @@ button:disabled {
 }
 
 .settings-dialog .dialog-title button {
-  width: 30px;
+  width: 28px;
+  min-height: 28px;
   padding: 0;
 }
 
 .settings-layout {
   min-height: 0;
   display: grid;
-  grid-template-columns: 122px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid #d8e0e8;
   border-radius: 8px;
   overflow: hidden;
@@ -649,18 +650,22 @@ button:disabled {
 
 .settings-tabs {
   display: grid;
-  align-content: start;
-  gap: 2px;
-  padding: 8px;
-  border-right: 1px solid #d8e0e8;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  padding: 5px;
+  border-right: 0;
+  border-bottom: 1px solid #d8e0e8;
   background: #f5f8fa;
 }
 
 .settings-tabs button {
-  justify-content: flex-start;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 6px;
   width: 100%;
   border-color: transparent;
   background: transparent;
+  font-weight: 650;
 }
 
 .settings-tabs button.active {
@@ -672,7 +677,7 @@ button:disabled {
 .settings-content {
   min-width: 0;
   min-height: 0;
-  padding: 12px;
+  padding: 10px 12px 12px;
   overflow: hidden auto;
   scrollbar-width: none;
 }
@@ -683,16 +688,24 @@ button:disabled {
 
 .settings-page {
   display: grid;
-  gap: 12px;
-  max-width: 420px;
+  gap: 8px;
+  max-width: none;
+}
+
+.settings-page label {
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
 }
 
 .setting-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  padding: 10px;
+  min-height: 34px;
+  padding: 7px 10px;
   border: 1px solid #e0e6ec;
   border-radius: 6px;
   color: #546575;
@@ -703,11 +716,12 @@ button:disabled {
 .setting-card strong {
   color: #182532;
   font-weight: 700;
+  text-align: right;
 }
 
 .split-choices {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(52px, 1fr));
   gap: 6px;
 }
 
@@ -720,7 +734,7 @@ button:disabled {
 .settings-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
 
 .modal-backdrop {
@@ -995,18 +1009,11 @@ button:disabled {
     display: none;
   }
 
-  .settings-layout {
-    grid-template-columns: 1fr;
-  }
-
   .settings-tabs {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    border-right: 0;
-    border-bottom: 1px solid #d8e0e8;
+    padding: 4px;
   }
 
   .settings-tabs button {
-    justify-content: center;
     padding: 0 6px;
   }
 
