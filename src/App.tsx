@@ -1,5 +1,7 @@
 import {
+  Copy,
   FolderOpen,
+  Info,
   Pause,
   Play,
   Plus,
@@ -24,11 +26,13 @@ import {
   retryDownload,
   resumeDownload,
   resumeAllDownloads,
+  selectDirectory,
   updateQueueSettings,
   type DownloadPreview,
 } from "./api/appApi";
 import type { AppStatus, EngineStatus } from "./types/appStatus";
 import type { DownloadTask, TaskCategory } from "./types/download";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   filterTasks,
   formatBytes,
@@ -149,6 +153,19 @@ interface AppProps {
   pollIntervalMs?: number;
 }
 
+type ContextMenuState =
+  | {
+      kind: "task";
+      taskId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "list";
+      x: number;
+      y: number;
+    };
+
 function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
   const [category, setCategory] = useState<TaskCategory>("all");
   const [tasksState, setTasksState] = useState<DownloadTask[]>(initialTasks);
@@ -177,6 +194,8 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     proxyEnabled: downloadSettings.proxyUrl.length > 0,
     proxyUrl: downloadSettings.proxyUrl,
   }));
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [deletePromptTaskId, setDeletePromptTaskId] = useState("");
   const counts = useMemo(() => getTaskCounts(tasksState), [tasksState]);
   const tasks = useMemo(() => filterTasks(tasksState, category), [category, tasksState]);
   const totalSpeed = useMemo(
@@ -184,6 +203,11 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     [tasksState],
   );
   const selectedTask = tasksState.find((task) => task.id === selectedTaskId) ?? tasksState[0];
+  const contextMenuTask =
+    contextMenu?.kind === "task"
+      ? tasksState.find((task) => task.id === contextMenu.taskId)
+      : undefined;
+  const deletePromptTask = tasksState.find((task) => task.id === deletePromptTaskId);
   const remainingBytes = selectedTask
     ? selectedTask.totalBytes - selectedTask.completedBytes
     : 0;
@@ -350,6 +374,84 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     };
   }, [downloadSettings.proxyUrl, newTaskOpen, taskDraft.url]);
 
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    function closeMenu() {
+      setContextMenu(null);
+    }
+
+    function closeMenuByKeyboard(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    }
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("keydown", closeMenuByKeyboard);
+
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("keydown", closeMenuByKeyboard);
+    };
+  }, [contextMenu]);
+
+  function openNewTaskDialog() {
+    setTaskDraft({
+      url: "",
+      saveDir: downloadSettings.defaultSaveDir,
+      split: String(nearestQuickSplit(downloadSettings.defaultSplit)),
+      speedLimitKib: "",
+    });
+    setDownloadPreview(null);
+    setPreviewStatus("idle");
+    setPreviewError("");
+    setNewTaskOpen(true);
+  }
+
+  function contextMenuPosition(event: ReactMouseEvent<HTMLElement>) {
+    const menuWidth = 190;
+    const menuHeight = 268;
+
+    return {
+      x: Math.max(6, Math.min(event.clientX, window.innerWidth - menuWidth - 6)),
+      y: Math.max(6, Math.min(event.clientY, window.innerHeight - menuHeight - 6)),
+    };
+  }
+
+  function openTaskContextMenu(
+    event: ReactMouseEvent<HTMLElement>,
+    task: DownloadTask,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedTaskId(task.id);
+    setContextMenu({
+      kind: "task",
+      taskId: task.id,
+      ...contextMenuPosition(event),
+    });
+  }
+
+  function openListContextMenu(event: ReactMouseEvent<HTMLElement>) {
+    event.preventDefault();
+    setContextMenu({
+      kind: "list",
+      ...contextMenuPosition(event),
+    });
+  }
+
+  function requestRemoveTask(task: DownloadTask) {
+    if (!task.gid) {
+      return;
+    }
+
+    setContextMenu(null);
+    setDeletePromptTaskId(task.id);
+  }
+
   async function handleCreateDownload() {
     const nextUrl = taskDraft.url.trim();
     if (!nextUrl) {
@@ -496,7 +598,7 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
       return;
     }
 
-    await handleRemoveTask(selectedTask);
+    requestRemoveTask(selectedTask);
   }
 
   async function handleRemoveTaskWithFile(task: DownloadTask) {
@@ -516,6 +618,21 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     } catch (error) {
       setActionError(error);
     }
+  }
+
+  async function handleConfirmRemoveTask(deleteFile: boolean) {
+    if (!deletePromptTask) {
+      return;
+    }
+
+    setDeletePromptTaskId("");
+
+    if (deleteFile) {
+      await handleRemoveTaskWithFile(deletePromptTask);
+      return;
+    }
+
+    await handleRemoveTask(deletePromptTask);
   }
 
   async function handleOpenTaskFile(task: DownloadTask) {
@@ -555,6 +672,15 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
       ]);
       setSelectedTaskId(retriedTask.id);
       setErrorMessage("");
+    } catch (error) {
+      setActionError(error);
+    }
+  }
+
+  async function handleCopyTaskUrl(task: DownloadTask) {
+    try {
+      await navigator.clipboard?.writeText(task.url);
+      setContextMenu(null);
     } catch (error) {
       setActionError(error);
     }
@@ -612,6 +738,32 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
     }
   }
 
+  async function handlePickTaskSaveDir() {
+    try {
+      const directory = await selectDirectory();
+      if (!directory) {
+        return;
+      }
+
+      setTaskDraft((current) => ({ ...current, saveDir: directory }));
+    } catch (error) {
+      setActionError(error);
+    }
+  }
+
+  async function handlePickDefaultSaveDir() {
+    try {
+      const directory = await selectDirectory();
+      if (!directory) {
+        return;
+      }
+
+      setSettingsDraft((current) => ({ ...current, defaultSaveDir: directory }));
+    } catch (error) {
+      setActionError(error);
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="download-window" aria-label="下载管理器主窗口">
@@ -623,18 +775,7 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
           <div className="toolbar-actions">
             <button
               className="primary-action"
-              onClick={() => {
-                setTaskDraft({
-                  url: "",
-                  saveDir: downloadSettings.defaultSaveDir,
-                  split: String(nearestQuickSplit(downloadSettings.defaultSplit)),
-                  speedLimitKib: "",
-                });
-                setDownloadPreview(null);
-                setPreviewStatus("idle");
-                setPreviewError("");
-                setNewTaskOpen(true);
-              }}
+              onClick={openNewTaskDialog}
               type="button"
             >
               <Plus size={16} />
@@ -684,23 +825,47 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
               <span>应用</span>
               <span>文档</span>
             </div>
+
+            <div className="queue-controls" aria-label="批量任务控制">
+              <p className="section-label">队列</p>
+              <div className="queue-control-grid">
+                <button
+                  aria-label="全部开始"
+                  onClick={handleResumeAllDownloads}
+                  title="全部开始"
+                  type="button"
+                >
+                  <Play size={14} />
+                  <span>开始</span>
+                </button>
+                <button
+                  aria-label="全部暂停"
+                  onClick={handlePauseAllDownloads}
+                  title="全部暂停"
+                  type="button"
+                >
+                  <Pause size={14} />
+                  <span>暂停</span>
+                </button>
+                <button
+                  aria-label="清理完成/失败"
+                  className="wide"
+                  onClick={handlePurgeStoppedDownloads}
+                  title="清理完成/失败"
+                  type="button"
+                >
+                  <Trash2 size={14} />
+                  <span>清理完成/失败</span>
+                </button>
+              </div>
+            </div>
           </aside>
 
-          <section className="task-panel" aria-label="下载任务列表">
-            <div className="batch-toolbar" aria-label="批量任务控制">
-              <button onClick={handleResumeAllDownloads} type="button">
-                <Play size={14} />
-                全部开始
-              </button>
-              <button onClick={handlePauseAllDownloads} type="button">
-                <Pause size={14} />
-                全部暂停
-              </button>
-              <button onClick={handlePurgeStoppedDownloads} type="button">
-                <Trash2 size={14} />
-                清理完成/失败
-              </button>
-            </div>
+          <section
+            className="task-panel"
+            aria-label="下载任务列表"
+            onContextMenu={openListContextMenu}
+          >
             <div className="task-header">
               <span>文件名</span>
               <span>进度</span>
@@ -722,6 +887,7 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
                     }
                     key={task.id}
                     onClick={() => setSelectedTaskId(task.id)}
+                    onContextMenu={(event) => openTaskContextMenu(event, task)}
                     type="button"
                   >
                     <span className="task-name">
@@ -821,17 +987,13 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
                     <FolderOpen size={15} />
                     目录
                   </button>
-                  <button onClick={() => handleRemoveTask(selectedTask)} type="button">
-                    <Trash2 size={15} />
-                    删除
-                  </button>
                   <button
                     className="danger-action"
-                    onClick={() => handleRemoveTaskWithFile(selectedTask)}
+                    onClick={() => requestRemoveTask(selectedTask)}
                     type="button"
                   >
                     <Trash2 size={15} />
-                    删文件
+                    删除
                   </button>
                 </div>
               </>
@@ -879,6 +1041,221 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
             </button>
           </div>
         </footer>
+        {contextMenu ? (
+          <div
+            aria-label={
+              contextMenu.kind === "task" ? "任务右键菜单" : "列表右键菜单"
+            }
+            className="context-menu"
+            onClick={(event) => event.stopPropagation()}
+            role="menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            {contextMenu.kind === "task" && contextMenuTask ? (
+              <>
+                <button
+                  disabled={
+                    !contextMenuTask.gid ||
+                    contextMenuTask.status === "active" ||
+                    contextMenuTask.status === "complete"
+                  }
+                  onClick={() => {
+                    setContextMenu(null);
+                    void (async () => {
+                      const gid = contextMenuTask.gid;
+                      if (!gid) {
+                        return;
+                      }
+
+                      try {
+                        await resumeDownload(gid);
+                        await refreshDownloads();
+                      } catch (error) {
+                        setActionError(error);
+                      }
+                    })();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Play size={14} />
+                  开始
+                </button>
+                <button
+                  disabled={
+                    !contextMenuTask.gid ||
+                    contextMenuTask.status === "paused" ||
+                    contextMenuTask.status === "waiting" ||
+                    contextMenuTask.status === "complete" ||
+                    contextMenuTask.status === "error"
+                  }
+                  onClick={() => {
+                    setContextMenu(null);
+                    void (async () => {
+                      const gid = contextMenuTask.gid;
+                      if (!gid) {
+                        return;
+                      }
+
+                      try {
+                        await pauseDownload(gid);
+                        await refreshDownloads();
+                      } catch (error) {
+                        setActionError(error);
+                      }
+                    })();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Pause size={14} />
+                  暂停
+                </button>
+                <button
+                  disabled={contextMenuTask.status !== "complete"}
+                  onClick={() => {
+                    setContextMenu(null);
+                    void handleOpenTaskFile(contextMenuTask);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <FolderOpen size={14} />
+                  打开文件
+                </button>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    void handleOpenTaskDir(contextMenuTask);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <FolderOpen size={14} />
+                  打开所在目录
+                </button>
+                <button
+                  onClick={() => void handleCopyTaskUrl(contextMenuTask)}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Copy size={14} />
+                  复制下载链接
+                </button>
+                <div className="context-separator" role="separator" />
+                <button
+                  className="danger-menu-item"
+                  onClick={() => requestRemoveTask(contextMenuTask)}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Trash2 size={14} />
+                  删除...
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedTaskId(contextMenuTask.id);
+                    setContextMenu(null);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Info size={14} />
+                  任务属性
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    openNewTaskDialog();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Plus size={14} />
+                  新建任务
+                </button>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    void handleResumeAllDownloads();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Play size={14} />
+                  全部开始
+                </button>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    void handlePauseAllDownloads();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Pause size={14} />
+                  全部暂停
+                </button>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    void handlePurgeStoppedDownloads();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Trash2 size={14} />
+                  清理完成/失败
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
+        {deletePromptTask ? (
+          <div className="modal-backdrop">
+            <div
+              aria-label="删除下载任务"
+              className="delete-dialog"
+              role="dialog"
+            >
+              <div className="dialog-title">
+                <div>
+                  <strong>删除下载任务</strong>
+                  <span>选择只移除记录，或同时删除本地文件。</span>
+                </div>
+                <button
+                  aria-label="关闭删除确认"
+                  onClick={() => setDeletePromptTaskId("")}
+                  type="button"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="delete-target">{deletePromptTask.fileName}</p>
+              <div className="dialog-actions">
+                <button onClick={() => setDeletePromptTaskId("")} type="button">
+                  取消
+                </button>
+                <button
+                  onClick={() => void handleConfirmRemoveTask(false)}
+                  type="button"
+                >
+                  仅删除任务
+                </button>
+                <button
+                  className="danger-action"
+                  onClick={() => void handleConfirmRemoveTask(true)}
+                  type="button"
+                >
+                  删除任务和文件
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         {settingsOpen ? (
           <div className="modal-backdrop">
             <form
@@ -933,16 +1310,26 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
                     <div className="settings-page">
                       <label>
                         默认下载目录
-                        <input
-                          aria-label="默认下载目录"
-                          onChange={(event) =>
-                            setSettingsDraft((current) => ({
-                              ...current,
-                              defaultSaveDir: event.target.value,
-                            }))
-                          }
-                          value={settingsDraft.defaultSaveDir}
-                        />
+                        <div className="path-picker">
+                          <input
+                            aria-label="默认下载目录"
+                            onChange={(event) =>
+                              setSettingsDraft((current) => ({
+                                ...current,
+                                defaultSaveDir: event.target.value,
+                              }))
+                            }
+                            value={settingsDraft.defaultSaveDir}
+                          />
+                          <button
+                            aria-label="选择默认下载目录"
+                            onClick={() => void handlePickDefaultSaveDir()}
+                            title="选择目录"
+                            type="button"
+                          >
+                            <FolderOpen size={15} />
+                          </button>
+                        </div>
                       </label>
                       <div className="setting-card">
                         <span>完成后</span>
@@ -1168,13 +1555,23 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
               </div>
               <label className="wide-field">
                 保存目录
-                <input
-                  aria-label="保存目录"
-                  onChange={(event) =>
-                    setTaskDraft((current) => ({ ...current, saveDir: event.target.value }))
-                  }
-                  value={taskDraft.saveDir}
-                />
+                <div className="path-picker">
+                  <input
+                    aria-label="保存目录"
+                    onChange={(event) =>
+                      setTaskDraft((current) => ({ ...current, saveDir: event.target.value }))
+                    }
+                    value={taskDraft.saveDir}
+                  />
+                  <button
+                    aria-label="选择保存目录"
+                    onClick={() => void handlePickTaskSaveDir()}
+                    title="选择目录"
+                    type="button"
+                  >
+                    <FolderOpen size={15} />
+                  </button>
+                </div>
               </label>
               <div className="dialog-grid">
                 <div className="thread-select-field">

@@ -11,6 +11,7 @@ pub fn run() {
     use tauri::Manager;
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let path = app.path();

@@ -18,6 +18,7 @@ import {
   resumeDownload,
   resumeAllDownloads,
   updateQueueSettings,
+  selectDirectory,
 } from "./api/appApi";
 import type { DownloadTask } from "./types/download";
 
@@ -38,6 +39,7 @@ vi.mock("./api/appApi", () => ({
   resumeDownload: vi.fn(),
   resumeAllDownloads: vi.fn(),
   updateQueueSettings: vi.fn(),
+  selectDirectory: vi.fn(),
 }));
 
 const createdTask: DownloadTask = {
@@ -96,6 +98,7 @@ describe("App", () => {
     vi.mocked(retryDownload).mockResolvedValue(createdTask);
     vi.mocked(resumeAllDownloads).mockResolvedValue();
     vi.mocked(updateQueueSettings).mockResolvedValue();
+    vi.mocked(selectDirectory).mockResolvedValue(null);
   });
 
   it("renders the 980px three-column downloader shell", async () => {
@@ -195,6 +198,20 @@ describe("App", () => {
     expect(screen.getByText(/E:\\Media/)).toBeInTheDocument();
   });
 
+  it("selects a default download directory from settings", async () => {
+    const user = userEvent.setup();
+    vi.mocked(selectDirectory).mockResolvedValue("E:\\Picked");
+    render(<App initialTasks={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    const settingsDialog = screen.getByRole("dialog", { name: "设置" });
+
+    await user.click(within(settingsDialog).getByRole("button", { name: "选择默认下载目录" }));
+
+    expect(selectDirectory).toHaveBeenCalledTimes(1);
+    expect(within(settingsDialog).getByLabelText("默认下载目录")).toHaveValue("E:\\Picked");
+  });
+
   it("saves max active downloads from the queue settings", async () => {
     const user = userEvent.setup();
     render(<App initialTasks={[]} />);
@@ -286,6 +303,20 @@ describe("App", () => {
       split: 64,
       speedLimit: 524288,
     });
+  });
+
+  it("selects a per-task save directory from the new task dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(selectDirectory).mockResolvedValue("F:\\Picked\\Task");
+    render(<App initialTasks={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "新建任务" }));
+    const dialog = screen.getByRole("dialog", { name: "新建下载任务" });
+
+    await user.click(within(dialog).getByRole("button", { name: "选择保存目录" }));
+
+    expect(selectDirectory).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByLabelText("保存目录")).toHaveValue("F:\\Picked\\Task");
   });
 
   it("uses compact radio buttons instead of a thread count input", async () => {
@@ -437,10 +468,63 @@ describe("App", () => {
     expect(pauseDownload).toHaveBeenCalledWith("gid-1");
 
     await user.click(screen.getByRole("button", { name: "删除任务" }));
-    expect(removeDownload).toHaveBeenCalledWith("gid-1");
+    expect(screen.getByRole("dialog", { name: "删除下载任务" })).toBeInTheDocument();
   });
 
-  it("uses batch queue controls for all downloads", async () => {
+  it("opens a task context menu from a row right click", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listDownloads).mockResolvedValue([createdTask]);
+
+    render(<App initialTasks={[]} />);
+
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    expect(await within(taskPanel).findByText("file.zip")).toBeInTheDocument();
+
+    await user.pointer({
+      keys: "[MouseRight]",
+      target: within(taskPanel).getByRole("button", { name: /file\.zip/ }),
+    });
+
+    const menu = screen.getByRole("menu", { name: "任务右键菜单" });
+    expect(within(menu).getByRole("menuitem", { name: "开始" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "暂停" })).toBeDisabled();
+    expect(within(menu).getByRole("menuitem", { name: "打开所在目录" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "复制下载链接" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "删除..." })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "任务属性" })).toBeInTheDocument();
+
+    await user.click(within(menu).getByRole("menuitem", { name: "开始" }));
+    expect(resumeDownload).toHaveBeenCalledWith("gid-1");
+  });
+
+  it("opens compact queue actions from the empty task list context menu", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listDownloads).mockResolvedValue([]);
+
+    render(<App initialTasks={[]} />);
+
+    const taskPanel = screen.getByLabelText("下载任务列表");
+    expect(await within(taskPanel).findByText("暂无任务")).toBeInTheDocument();
+
+    await user.pointer({
+      keys: "[MouseRight]",
+      target: taskPanel,
+    });
+
+    const menu = screen.getByRole("menu", { name: "列表右键菜单" });
+    expect(within(menu).getByRole("menuitem", { name: "新建任务" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "全部开始" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "全部暂停" })).toBeInTheDocument();
+    expect(
+      within(menu).getByRole("menuitem", { name: "清理完成/失败" }),
+    ).toBeInTheDocument();
+    expect(within(menu).queryByRole("menuitem", { name: "打开文件" })).not.toBeInTheDocument();
+
+    await user.click(within(menu).getByRole("menuitem", { name: "新建任务" }));
+    expect(screen.getByRole("dialog", { name: "新建下载任务" })).toBeInTheDocument();
+  });
+
+  it("uses sidebar queue controls for all downloads", async () => {
     const user = userEvent.setup();
     vi.mocked(listDownloads).mockResolvedValue([
       { ...createdTask, status: "active" },
@@ -457,14 +541,18 @@ describe("App", () => {
     render(<App initialTasks={[]} />);
 
     expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
+    const queueControls = screen.getByLabelText("批量任务控制");
 
-    await user.click(screen.getByRole("button", { name: "全部开始" }));
+    expect(document.querySelector(".batch-toolbar")).not.toBeInTheDocument();
+    expect(queueControls).toHaveClass("queue-controls");
+
+    await user.click(within(queueControls).getByRole("button", { name: "全部开始" }));
     expect(resumeAllDownloads).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "全部暂停" }));
+    await user.click(within(queueControls).getByRole("button", { name: "全部暂停" }));
     expect(pauseAllDownloads).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "清理完成/失败" }));
+    await user.click(within(queueControls).getByRole("button", { name: "清理完成/失败" }));
     expect(purgeStoppedDownloads).toHaveBeenCalledTimes(1);
   });
 
@@ -545,7 +633,7 @@ describe("App", () => {
     expect(await screen.findByText(/aria2 异常/)).toBeInTheDocument();
   });
 
-  it("opens files, opens folders, and supports deleting local files", async () => {
+  it("opens files, opens folders, and merges delete actions into one confirmation", async () => {
     const user = userEvent.setup();
     const completeTask: DownloadTask = {
       ...createdTask,
@@ -565,7 +653,19 @@ describe("App", () => {
     await user.click(within(detailsPanel).getByRole("button", { name: "目录" }));
     expect(openDownloadDir).toHaveBeenCalledWith("gid-1");
 
-    await user.click(within(detailsPanel).getByRole("button", { name: "删文件" }));
+    expect(within(detailsPanel).getByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(
+      within(detailsPanel).queryByRole("button", { name: "删文件" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(detailsPanel).getByRole("button", { name: "删除" }));
+    const deleteDialog = screen.getByRole("dialog", { name: "删除下载任务" });
+    expect(within(deleteDialog).getByText("file.zip")).toBeInTheDocument();
+    expect(
+      within(deleteDialog).getByRole("button", { name: "仅删除任务" }),
+    ).toBeInTheDocument();
+
+    await user.click(within(deleteDialog).getByRole("button", { name: "删除任务和文件" }));
     expect(removeDownload).toHaveBeenCalledWith("gid-1", { deleteFile: true });
   });
 

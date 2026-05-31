@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { AppStatus } from "../types/appStatus";
 import type { DownloadTask } from "../types/download";
 
@@ -301,4 +302,17 @@ export async function retryDownload(gid: string): Promise<DownloadTask> {
   }
 
   return invoke<DownloadTask>("retry_download", { gid });
+}
+
+export async function selectDirectory(): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  const selected = await open({
+    directory: true,
+    multiple: false,
+  });
+
+  return typeof selected === "string" ? selected : null;
 }
