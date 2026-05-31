@@ -238,6 +238,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
 
   function applyDownloads(downloads: DownloadTask[]) {
     setTasksState(downloads);
+    setAppStatus((status) => ({ ...status, aria2Engine: "connected" }));
     setSelectedTaskId((currentSelectedId) => {
       if (downloads.some((task) => task.id === currentSelectedId)) {
         return currentSelectedId;
@@ -245,6 +246,11 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
 
       return downloads[0]?.id ?? "";
     });
+  }
+
+  function setActionError(error: unknown) {
+    setErrorMessage(error instanceof Error ? error.message : String(error));
+    setAppStatus((status) => ({ ...status, aria2Engine: "error" }));
   }
 
   async function refreshDownloads() {
@@ -263,7 +269,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
         }
       } catch (error) {
         if (alive) {
-          setErrorMessage(error instanceof Error ? error.message : String(error));
+          setActionError(error);
         }
       }
     }
@@ -297,7 +303,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
       setSelectedTaskId(task.id);
       setUrl("");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setActionError(error);
     }
   }
 
@@ -314,7 +320,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
       }
       await refreshDownloads();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setActionError(error);
     }
   }
 
@@ -333,7 +339,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
         return nextTasks;
       });
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setActionError(error);
     }
   }
 
@@ -352,7 +358,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
         return nextTasks;
       });
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setActionError(error);
     }
   }
 
@@ -364,7 +370,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
     try {
       await openDownloadFile(task.gid);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setActionError(error);
     }
   }
 
@@ -376,7 +382,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
     try {
       await openDownloadDir(task.gid);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setActionError(error);
     }
   }
 
@@ -394,7 +400,7 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
       setSelectedTaskId(retriedTask.id);
       setErrorMessage("");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setActionError(error);
     }
   }
 

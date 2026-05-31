@@ -197,6 +197,15 @@ describe("App", () => {
     expect(listDownloads).toHaveBeenCalledTimes(2);
   });
 
+  it("marks aria2 as offline when polling downloads fails", async () => {
+    vi.mocked(listDownloads).mockRejectedValue(new Error("aria2 RPC 请求失败"));
+
+    render(<App initialTasks={[]} pollIntervalMs={20} />);
+
+    expect(await screen.findByText("aria2 RPC 请求失败")).toBeInTheDocument();
+    expect(await screen.findByText(/aria2 异常/)).toBeInTheDocument();
+  });
+
   it("opens files, opens folders, and supports deleting local files", async () => {
     const user = userEvent.setup();
     const completeTask: DownloadTask = {
