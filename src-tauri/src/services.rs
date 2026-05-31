@@ -129,6 +129,24 @@ impl DownloadService {
             );
         }
 
+        let candidates = restore_candidates(&stored_tasks, &tasks);
+        for stored_task in candidates {
+            match self.restore_task(&stored_task).await {
+                Ok(restored_task) => {
+                    self.inner.store.upsert(restored_task.clone())?;
+                    tasks.push(restored_task);
+                }
+                Err(err) => {
+                    let mut failed_task = stored_task;
+                    failed_task.status = DownloadStatus::Error;
+                    failed_task.download_speed = 0;
+                    failed_task.error_message = Some(err);
+                    self.inner.store.upsert(failed_task.clone())?;
+                    tasks.push(failed_task);
+                }
+            }
+        }
+
         for task in &tasks {
             self.inner.store.upsert(task.clone())?;
         }
@@ -140,6 +158,14 @@ impl DownloadService {
         }
 
         Ok(tasks)
+    }
+
+    async fn restore_task(&self, stored_task: &DownloadTask) -> Result<DownloadTask, String> {
+        let options = restore_options_from_task(stored_task, &self.inner.config);
+        let payload = build_add_uri_payload(&stored_task.url, &options, &self.inner.config);
+        let gid = self.rpc::<String>(payload).await?;
+        let restored = self.tell_status(&gid).await?;
+        Ok(rebind_restored_task(restored, stored_task))
     }
 
     pub async fn pause(&self, gid: &str) -> Result<(), String> {
@@ -328,6 +354,55 @@ pub fn merge_stored_options(task: DownloadTask, stored_tasks: &[DownloadTask]) -
         .unwrap_or(task)
 }
 
+pub fn restore_options_from_task(task: &DownloadTask, config: &Aria2Config) -> AddUriOptions {
+    let mut options = crate::aria2::add_uri_options(
+        task.save_dir.clone(),
+        Some(task.file_name.clone()),
+        task.options.split,
+        task.options.proxy_url.clone(),
+        config,
+    );
+    options.max_connection_per_server = task.options.max_connection_per_server.to_string();
+    if task.status == DownloadStatus::Paused {
+        options.pause = Some("true".to_string());
+    }
+    options
+}
+
+pub fn should_restore_task(task: &DownloadTask) -> bool {
+    matches!(
+        task.status,
+        DownloadStatus::Waiting | DownloadStatus::Active | DownloadStatus::Paused | DownloadStatus::Error
+    ) && !task.url.trim().is_empty()
+}
+
+pub fn restore_candidates(
+    stored_tasks: &[DownloadTask],
+    live_tasks: &[DownloadTask],
+) -> Vec<DownloadTask> {
+    stored_tasks
+        .iter()
+        .filter(|task| should_restore_task(task))
+        .filter(|stored| {
+            !live_tasks.iter().any(|live| {
+                live.id == stored.id
+                    || stored
+                        .gid
+                        .as_ref()
+                        .is_some_and(|stored_gid| live.gid.as_deref() == Some(stored_gid))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+pub fn rebind_restored_task(mut restored: DownloadTask, stored: &DownloadTask) -> DownloadTask {
+    restored.id = stored.id.clone();
+    restored.created_at = stored.created_at.clone();
+    restored.options = stored.options.clone();
+    restored
+}
+
 pub fn download_file_path_from_task(task: &DownloadTask) -> PathBuf {
     PathBuf::from(&task.save_dir).join(&task.file_name)
 }
@@ -415,6 +490,7 @@ mod tests {
             max_connection_per_server: "12".to_string(),
             min_split_size: "1M".to_string(),
             all_proxy: Some("http://127.0.0.1:7890".to_string()),
+            pause: None,
             continue_download: "true".to_string(),
         };
 
@@ -451,6 +527,77 @@ mod tests {
         assert_eq!(merged.options.split, 6);
         assert_eq!(
             merged.options.proxy_url,
+            Some("http://127.0.0.1:7890".to_string())
+        );
+    }
+
+    #[test]
+    fn restore_options_from_task_preserve_saved_metadata_and_pause_state() {
+        let mut task = sample_task(PathBuf::from("E:\\Media"), "movie.iso");
+        task.status = DownloadStatus::Paused;
+        task.url = "https://example.com/movie.iso".to_string();
+        task.options = DownloadTaskOptions {
+            split: 12,
+            max_connection_per_server: 12,
+            speed_limit: 0,
+            proxy_url: Some("http://127.0.0.1:7890".to_string()),
+        };
+
+        let options = restore_options_from_task(&task, &Aria2Config::default());
+
+        assert_eq!(options.dir, "E:\\Media");
+        assert_eq!(options.out, Some("movie.iso".to_string()));
+        assert_eq!(options.split, "12");
+        assert_eq!(options.all_proxy, Some("http://127.0.0.1:7890".to_string()));
+        assert_eq!(options.pause, Some("true".to_string()));
+        assert_eq!(options.continue_download, "true");
+    }
+
+    #[test]
+    fn restore_candidates_include_missing_incomplete_tasks_only() {
+        let mut waiting = sample_task(PathBuf::from("D:\\Downloads"), "waiting.zip");
+        waiting.id = "waiting-id".to_string();
+        waiting.gid = Some("waiting-gid".to_string());
+        waiting.status = DownloadStatus::Waiting;
+
+        let mut complete = sample_task(PathBuf::from("D:\\Downloads"), "done.zip");
+        complete.id = "complete-id".to_string();
+        complete.status = DownloadStatus::Complete;
+
+        let mut live = waiting.clone();
+        live.id = "live-id".to_string();
+        live.gid = Some("live-gid".to_string());
+
+        let candidates = restore_candidates(&[waiting.clone(), complete], &[live]);
+
+        assert_eq!(candidates, vec![waiting]);
+    }
+
+    #[test]
+    fn rebind_restored_task_keeps_app_id_and_updates_aria2_gid() {
+        let mut stored = sample_task(PathBuf::from("D:\\Downloads"), "archive.zip");
+        stored.id = "stored-id".to_string();
+        stored.gid = Some("old-gid".to_string());
+        stored.created_at = "2026-05-31T00:00:00.000Z".to_string();
+        stored.options = DownloadTaskOptions {
+            split: 6,
+            max_connection_per_server: 6,
+            speed_limit: 0,
+            proxy_url: Some("http://127.0.0.1:7890".to_string()),
+        };
+        let mut restored = sample_task(PathBuf::from("D:\\Downloads"), "archive.zip");
+        restored.id = "new-gid".to_string();
+        restored.gid = Some("new-gid".to_string());
+        restored.status = DownloadStatus::Active;
+
+        let rebound = rebind_restored_task(restored, &stored);
+
+        assert_eq!(rebound.id, "stored-id");
+        assert_eq!(rebound.gid, Some("new-gid".to_string()));
+        assert_eq!(rebound.created_at, "2026-05-31T00:00:00.000Z");
+        assert_eq!(rebound.options.split, 6);
+        assert_eq!(
+            rebound.options.proxy_url,
             Some("http://127.0.0.1:7890".to_string())
         );
     }

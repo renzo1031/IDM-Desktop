@@ -41,6 +41,8 @@ pub struct AddUriOptions {
     pub min_split_size: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub all_proxy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pause: Option<String>,
     #[serde(rename = "continue")]
     pub continue_download: String,
 }
@@ -167,6 +169,7 @@ pub fn add_uri_options(
         max_connection_per_server: config.max_connection_per_server.to_string(),
         min_split_size: config.min_split_size.clone(),
         all_proxy: proxy_url,
+        pause: None,
         continue_download: "true".to_string(),
     }
 }
