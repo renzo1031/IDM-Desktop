@@ -636,6 +636,34 @@ mod tests {
     }
 
     #[test]
+    fn complete_aria2_status_maps_to_complete_download_task() {
+        let status: Aria2TaskStatus = serde_json::from_value(json!({
+            "gid": "done123",
+            "status": "complete",
+            "totalLength": "1048576",
+            "completedLength": "1048576",
+            "downloadSpeed": "0",
+            "connections": "0",
+            "dir": "D:\\Downloads",
+            "files": [{
+                "path": "D:\\Downloads\\done.zip",
+                "uris": [{
+                    "uri": "https://example.com/done.zip",
+                    "status": "used"
+                }]
+            }]
+        }))
+        .unwrap();
+
+        let task = status.into_download_task();
+
+        assert_eq!(task.status, crate::models::DownloadStatus::Complete);
+        assert_eq!(task.total_bytes, 1_048_576);
+        assert_eq!(task.completed_bytes, 1_048_576);
+        assert_eq!(task.download_speed, 0);
+    }
+
+    #[test]
     fn invalid_range_error_marks_task_as_not_resumable() {
         let status: Aria2TaskStatus = serde_json::from_value(json!({
             "gid": "range-error",
