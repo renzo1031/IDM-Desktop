@@ -40,6 +40,19 @@ describe("appApi", () => {
     expect(task.status).toBe("waiting");
   });
 
+  it("accepts proxy settings in fallback download creation", async () => {
+    const task = await createDownload({
+      url: "https://example.com/proxy.zip",
+      saveDir: "D:\\Downloads",
+      split: 6,
+      proxyUrl: "http://127.0.0.1:7890",
+    });
+
+    expect(task.url).toBe("https://example.com/proxy.zip");
+    expect(task.options.split).toBe(6);
+    expect(task.options.proxyUrl).toBe("http://127.0.0.1:7890");
+  });
+
   it("keeps fallback downloads in memory for browser previews", async () => {
     const task = await createDownload({
       url: "https://example.com/preview.zip",
@@ -68,6 +81,7 @@ describe("appApi", () => {
       saveDir: "D:\\Downloads",
       fileName: "retry.zip",
       split: 10,
+      proxyUrl: "http://127.0.0.1:7890",
     });
     await pauseDownload(failedTask.gid!);
 
@@ -78,6 +92,7 @@ describe("appApi", () => {
     expect(retriedTask.fileName).toBe(failedTask.fileName);
     expect(retriedTask.saveDir).toBe(failedTask.saveDir);
     expect(retriedTask.options.split).toBe(10);
+    expect(retriedTask.options.proxyUrl).toBe("http://127.0.0.1:7890");
     expect(retriedTask.status).toBe("waiting");
   });
 });

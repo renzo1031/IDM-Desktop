@@ -18,6 +18,7 @@ export interface DownloadTaskOptions {
   split: number;
   maxConnectionPerServer: number;
   speedLimit: number;
+  proxyUrl?: string | null;
 }
 
 export interface DownloadTask {

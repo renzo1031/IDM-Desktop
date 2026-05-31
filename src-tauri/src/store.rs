@@ -101,6 +101,7 @@ mod tests {
                 split: 16,
                 max_connection_per_server: 16,
                 speed_limit: 0,
+                proxy_url: None,
             },
         }
     }

@@ -57,6 +57,7 @@ const pollingTask: DownloadTask = {
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     vi.mocked(getAppStatus).mockResolvedValue({
       appName: "IDM Desktop",
       aria2Engine: "connected",
@@ -100,6 +101,48 @@ describe("App", () => {
       split: 24,
     });
     expect(await screen.findAllByText("file.zip")).not.toHaveLength(0);
+  });
+
+  it("saves default download settings and uses them for new tasks", async () => {
+    const user = userEvent.setup();
+    render(<App initialTasks={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    await user.clear(screen.getByLabelText("默认下载目录"));
+    await user.type(screen.getByLabelText("默认下载目录"), "E:\\Media");
+    await user.clear(screen.getByLabelText("默认线程数"));
+    await user.type(screen.getByLabelText("默认线程数"), "12");
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await user.type(screen.getByPlaceholderText("粘贴下载链接..."), createdTask.url);
+    await user.click(screen.getByRole("button", { name: /新建/ }));
+
+    expect(createDownload).toHaveBeenCalledWith({
+      url: createdTask.url,
+      saveDir: "E:\\Media",
+      split: 12,
+    });
+    expect(screen.getByText(/E:\\Media/)).toBeInTheDocument();
+  });
+
+  it("saves proxy settings and sends them when creating downloads", async () => {
+    const user = userEvent.setup();
+    render(<App initialTasks={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    await user.type(screen.getByLabelText("HTTP/HTTPS 代理"), "http://127.0.0.1:7890");
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await user.type(screen.getByPlaceholderText("粘贴下载链接..."), createdTask.url);
+    await user.click(screen.getByRole("button", { name: /新建/ }));
+
+    expect(createDownload).toHaveBeenCalledWith({
+      url: createdTask.url,
+      saveDir: "D:\\Downloads",
+      split: 24,
+      proxyUrl: "http://127.0.0.1:7890",
+    });
+    expect(screen.getByText(/代理已启用/)).toBeInTheDocument();
   });
 
   it("pauses the selected task through the backend command", async () => {

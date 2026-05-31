@@ -42,6 +42,7 @@ export interface CreateDownloadInput {
   saveDir: string;
   fileName?: string;
   split?: number;
+  proxyUrl?: string;
 }
 
 export async function listDownloads(): Promise<DownloadTask[]> {
@@ -78,6 +79,7 @@ export async function createDownload(input: CreateDownloadInput): Promise<Downlo
         split: input.split ?? 16,
         maxConnectionPerServer: input.split ?? 16,
         speedLimit: 0,
+        proxyUrl: input.proxyUrl?.trim() || null,
       },
     };
     fallbackDownloads = [task, ...fallbackDownloads];
@@ -163,6 +165,7 @@ export async function retryDownload(gid: string): Promise<DownloadTask> {
       saveDir: task.saveDir,
       fileName: task.fileName,
       split: task.options.split,
+      proxyUrl: task.options.proxyUrl ?? undefined,
     });
   }
 

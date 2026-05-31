@@ -37,6 +37,7 @@ pub struct CreateDownloadInput {
     pub save_dir: String,
     pub file_name: Option<String>,
     pub split: Option<u32>,
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -56,6 +57,21 @@ pub fn validate_create_download_input(input: &CreateDownloadInput) -> Result<(),
         return Err("保存目录不能为空".to_string());
     }
 
+    if let Some(proxy_url) = input
+        .proxy_url
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        if !(proxy_url.starts_with("http://")
+            || proxy_url.starts_with("https://")
+            || proxy_url.starts_with("socks4://")
+            || proxy_url.starts_with("socks5://"))
+        {
+            return Err("代理地址仅支持 HTTP/HTTPS/SOCKS4/SOCKS5".to_string());
+        }
+    }
+
     Ok(())
 }
 
@@ -72,6 +88,11 @@ pub fn build_create_download_request(
             .map(|name| name.trim().to_string())
             .filter(|name| !name.is_empty()),
         input.split.unwrap_or(config.default_split),
+        input
+            .proxy_url
+            .as_ref()
+            .map(|proxy_url| proxy_url.trim().to_string())
+            .filter(|proxy_url| !proxy_url.is_empty()),
         config,
     );
 
@@ -87,6 +108,7 @@ pub fn retry_input_from_task(task: &crate::models::DownloadTask) -> CreateDownlo
         save_dir: task.save_dir.clone(),
         file_name: Some(task.file_name.clone()),
         split: Some(task.options.split),
+        proxy_url: task.options.proxy_url.clone(),
     }
 }
 
@@ -225,6 +247,7 @@ mod tests {
             save_dir: "D:\\Downloads".to_string(),
             file_name: None,
             split: None,
+            proxy_url: None,
         };
 
         let err = validate_create_download_input(&input).unwrap_err();
@@ -239,6 +262,7 @@ mod tests {
             save_dir: "D:\\Downloads".to_string(),
             file_name: None,
             split: None,
+            proxy_url: None,
         };
 
         let request = build_create_download_request(&input, &Aria2Config::default()).unwrap();
@@ -247,6 +271,39 @@ mod tests {
         assert_eq!(request.options.dir, "D:\\Downloads");
         assert_eq!(request.options.split, "16");
         assert_eq!(request.options.continue_download, "true");
+    }
+
+    #[test]
+    fn create_download_input_passes_proxy_to_aria2_options() {
+        let input = CreateDownloadInput {
+            url: "https://example.com/file.zip".to_string(),
+            save_dir: "D:\\Downloads".to_string(),
+            file_name: None,
+            split: Some(8),
+            proxy_url: Some(" http://127.0.0.1:7890 ".to_string()),
+        };
+
+        let request = build_create_download_request(&input, &Aria2Config::default()).unwrap();
+
+        assert_eq!(
+            request.options.all_proxy,
+            Some("http://127.0.0.1:7890".to_string())
+        );
+    }
+
+    #[test]
+    fn create_download_input_rejects_unsupported_proxy_scheme() {
+        let input = CreateDownloadInput {
+            url: "https://example.com/file.zip".to_string(),
+            save_dir: "D:\\Downloads".to_string(),
+            file_name: None,
+            split: None,
+            proxy_url: Some("ftp://127.0.0.1:7890".to_string()),
+        };
+
+        let err = validate_create_download_input(&input).unwrap_err();
+
+        assert!(err.contains("代理地址仅支持"));
     }
 
     #[test]
@@ -270,6 +327,7 @@ mod tests {
                 split: 8,
                 max_connection_per_server: 8,
                 speed_limit: 0,
+                proxy_url: Some("http://127.0.0.1:7890".to_string()),
             },
         };
 
@@ -279,5 +337,9 @@ mod tests {
         assert_eq!(input.save_dir, "D:\\Downloads");
         assert_eq!(input.file_name, Some("archive.zip".to_string()));
         assert_eq!(input.split, Some(8));
+        assert_eq!(
+            input.proxy_url,
+            Some("http://127.0.0.1:7890".to_string())
+        );
     }
 }

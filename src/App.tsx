@@ -114,6 +114,8 @@ const initialAppStatus: AppStatus = {
   defaultSplit: 16,
 };
 
+const settingsStorageKey = "idm-desktop-settings";
+
 const engineStatusLabel: Record<EngineStatus, string> = {
   bundled: "内置 aria2",
   starting: "aria2 启动中",
@@ -129,6 +131,45 @@ function progressOf(task: DownloadTask): number {
   return Math.min(100, Math.round((task.completedBytes / task.totalBytes) * 100));
 }
 
+function clampSplit(value: number): number {
+  if (!Number.isFinite(value)) {
+    return initialAppStatus.defaultSplit;
+  }
+
+  return Math.min(32, Math.max(1, Math.round(value)));
+}
+
+function loadSavedSettings() {
+  try {
+    const savedSettings = window.localStorage.getItem(settingsStorageKey);
+    if (!savedSettings) {
+      return {
+        defaultSaveDir: "D:\\Downloads",
+        defaultSplit: initialAppStatus.defaultSplit,
+        proxyUrl: "",
+      };
+    }
+
+    const parsed = JSON.parse(savedSettings) as {
+      defaultSaveDir?: string;
+      defaultSplit?: number;
+      proxyUrl?: string;
+    };
+
+    return {
+      defaultSaveDir: parsed.defaultSaveDir?.trim() || "D:\\Downloads",
+      defaultSplit: clampSplit(parsed.defaultSplit ?? initialAppStatus.defaultSplit),
+      proxyUrl: parsed.proxyUrl?.trim() || "",
+    };
+  } catch {
+    return {
+      defaultSaveDir: "D:\\Downloads",
+      defaultSplit: initialAppStatus.defaultSplit,
+      proxyUrl: "",
+    };
+  }
+}
+
 interface AppProps {
   initialTasks?: DownloadTask[];
   pollIntervalMs?: number;
@@ -141,6 +182,13 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
   const [selectedTaskId, setSelectedTaskId] = useState(initialTasks[0]?.id ?? "");
   const [appStatus, setAppStatus] = useState<AppStatus>(initialAppStatus);
   const [errorMessage, setErrorMessage] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [downloadSettings, setDownloadSettings] = useState(loadSavedSettings);
+  const [settingsDraft, setSettingsDraft] = useState(() => ({
+    defaultSaveDir: downloadSettings.defaultSaveDir,
+    defaultSplit: String(downloadSettings.defaultSplit),
+    proxyUrl: downloadSettings.proxyUrl,
+  }));
   const counts = useMemo(() => getTaskCounts(tasksState), [tasksState]);
   const tasks = useMemo(() => filterTasks(tasksState, category), [category, tasksState]);
   const totalSpeed = useMemo(
@@ -159,6 +207,22 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
       .then((status) => {
         if (alive) {
           setAppStatus(status);
+          setDownloadSettings((current) => {
+            const savedSettings = window.localStorage.getItem(settingsStorageKey);
+            if (savedSettings) {
+              return current;
+            }
+
+            return { ...current, defaultSplit: status.defaultSplit };
+          });
+          setSettingsDraft((current) => {
+            const savedSettings = window.localStorage.getItem(settingsStorageKey);
+            if (savedSettings) {
+              return current;
+            }
+
+            return { ...current, defaultSplit: String(status.defaultSplit) };
+          });
         }
       })
       .catch(() => {
@@ -222,11 +286,13 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
 
     setErrorMessage("");
     try {
-      const task = await createDownload({
+      const createInput = {
         url: nextUrl,
-        saveDir: "D:\\Downloads",
-        split: appStatus.defaultSplit,
-      });
+        saveDir: downloadSettings.defaultSaveDir,
+        split: downloadSettings.defaultSplit,
+        ...(downloadSettings.proxyUrl ? { proxyUrl: downloadSettings.proxyUrl } : {}),
+      };
+      const task = await createDownload(createInput);
       setTasksState((current) => [task, ...current.filter((item) => item.id !== task.id)]);
       setSelectedTaskId(task.id);
       setUrl("");
@@ -330,6 +396,23 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  function handleSaveSettings() {
+    const nextSettings = {
+      defaultSaveDir: settingsDraft.defaultSaveDir.trim() || "D:\\Downloads",
+      defaultSplit: clampSplit(Number(settingsDraft.defaultSplit)),
+      proxyUrl: settingsDraft.proxyUrl.trim(),
+    };
+
+    window.localStorage.setItem(settingsStorageKey, JSON.stringify(nextSettings));
+    setDownloadSettings(nextSettings);
+    setSettingsDraft({
+      defaultSaveDir: nextSettings.defaultSaveDir,
+      defaultSplit: String(nextSettings.defaultSplit),
+      proxyUrl: nextSettings.proxyUrl,
+    });
+    setSettingsOpen(false);
   }
 
   return (
@@ -524,16 +607,72 @@ function App({ initialTasks = sampleTasks, pollIntervalMs = 1500 }: AppProps) {
         <footer className="statusbar">
           <span>
             {engineStatusLabel[appStatus.aria2Engine]} · RPC 6800 · 默认{" "}
-            {appStatus.defaultSplit} 线程
+            {downloadSettings.defaultSplit} 线程
           </span>
-          <span>D:\Downloads · 剩余 428 GB</span>
-          <button aria-label="设置" type="button">
+          <span>
+            {downloadSettings.defaultSaveDir} ·{" "}
+            {downloadSettings.proxyUrl ? "代理已启用" : "直连"} · 剩余 428 GB
+          </span>
+          <button
+            aria-expanded={settingsOpen}
+            aria-label="设置"
+            onClick={() => setSettingsOpen((open) => !open)}
+            type="button"
+          >
             <Settings size={15} />
           </button>
           <button aria-label="删除任务" type="button">
             <Trash2 size={15} />
           </button>
         </footer>
+        {settingsOpen ? (
+          <form className="settings-panel" onSubmit={(event) => event.preventDefault()}>
+            <label>
+              默认下载目录
+              <input
+                aria-label="默认下载目录"
+                onChange={(event) =>
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    defaultSaveDir: event.target.value,
+                  }))
+                }
+                value={settingsDraft.defaultSaveDir}
+              />
+            </label>
+            <label>
+              默认线程数
+              <input
+                aria-label="默认线程数"
+                inputMode="numeric"
+                onChange={(event) =>
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    defaultSplit: event.target.value,
+                  }))
+                }
+                value={settingsDraft.defaultSplit}
+              />
+            </label>
+            <label>
+              HTTP/HTTPS 代理
+              <input
+                aria-label="HTTP/HTTPS 代理"
+                onChange={(event) =>
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    proxyUrl: event.target.value,
+                  }))
+                }
+                placeholder="http://127.0.0.1:7890"
+                value={settingsDraft.proxyUrl}
+              />
+            </label>
+            <button onClick={handleSaveSettings} type="button">
+              保存设置
+            </button>
+          </form>
+        ) : null}
       </section>
     </main>
   );

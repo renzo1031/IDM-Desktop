@@ -44,6 +44,7 @@ button {
 }
 
 .download-window {
+  position: relative;
   width: min(980px, 100%);
   min-height: 680px;
   display: grid;
@@ -407,6 +408,48 @@ button {
   background: transparent;
 }
 
+.settings-panel {
+  position: absolute;
+  right: 38px;
+  bottom: 34px;
+  z-index: 3;
+  width: min(560px, calc(100% - 56px));
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 82px minmax(150px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #c8d1dc;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 14px 32px rgba(37, 50, 64, 0.18);
+}
+
+.settings-panel label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #546575;
+  font-size: 12px;
+}
+
+.settings-panel input {
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #c8d1dc;
+  border-radius: 6px;
+}
+
+.settings-panel button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #2569d6;
+  border-radius: 6px;
+  color: #fff;
+  background: #2569d6;
+}
+
 @media (max-width: 900px) {
   body {
     min-width: 820px;
@@ -457,5 +500,16 @@ button {
   .type-list,
   .section-gap {
     display: none;
+  }
+
+  .settings-panel {
+    right: 18px;
+    left: 18px;
+    width: auto;
+    grid-template-columns: minmax(0, 1fr) 82px;
+  }
+
+  .settings-panel button {
+    grid-column: 1 / -1;
   }
 }

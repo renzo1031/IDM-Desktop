@@ -17,6 +17,8 @@ pub struct DownloadTaskOptions {
     pub split: u32,
     pub max_connection_per_server: u32,
     pub speed_limit: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

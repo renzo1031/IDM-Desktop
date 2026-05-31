@@ -3,7 +3,7 @@ use crate::aria2::{
     build_shutdown_payload, build_tell_status_payload, prepare_launch_plan, AddUriOptions,
     Aria2Config, Aria2TaskStatus,
 };
-use crate::models::{DownloadStatus, DownloadTask};
+use crate::models::{DownloadStatus, DownloadTask, DownloadTaskOptions};
 use crate::store::TaskStore;
 use reqwest::Client;
 use serde::Deserialize;
@@ -99,7 +99,7 @@ impl DownloadService {
         let payload = build_add_uri_payload(url, options, &self.inner.config);
         let gid = self.rpc::<String>(payload).await?;
         if let Ok(task) = self.tell_status(&gid).await {
-            self.inner.store.upsert(task)?;
+            self.inner.store.upsert(with_request_options(task, options))?;
         }
         Ok(gid)
     }
@@ -121,7 +121,12 @@ impl DownloadService {
             self.list_payload("tell-stopped", "aria2.tellStopped"),
         ] {
             let statuses = self.rpc::<Vec<Aria2TaskStatus>>(payload).await?;
-            tasks.extend(statuses.into_iter().map(Aria2TaskStatus::into_download_task));
+            tasks.extend(
+                statuses
+                    .into_iter()
+                    .map(Aria2TaskStatus::into_download_task)
+                    .map(|task| merge_stored_options(task, &stored_tasks)),
+            );
         }
 
         for task in &tasks {
@@ -192,7 +197,13 @@ impl DownloadService {
         let status = self
             .rpc::<Aria2TaskStatus>(build_tell_status_payload(gid, &self.inner.config))
             .await?;
-        Ok(status.into_download_task())
+        let task = status.into_download_task();
+        Ok(self
+            .inner
+            .store
+            .find(gid)?
+            .map(|stored| merge_task_options(task.clone(), &stored))
+            .unwrap_or(task))
     }
 
     pub fn config(&self) -> &Aria2Config {
@@ -286,6 +297,37 @@ impl DownloadService {
     }
 }
 
+pub fn request_options(options: &AddUriOptions) -> DownloadTaskOptions {
+    let split = options.split.parse::<u32>().unwrap_or(16);
+    DownloadTaskOptions {
+        split,
+        max_connection_per_server: options
+            .max_connection_per_server
+            .parse::<u32>()
+            .unwrap_or(split),
+        speed_limit: 0,
+        proxy_url: options.all_proxy.clone(),
+    }
+}
+
+pub fn with_request_options(mut task: DownloadTask, options: &AddUriOptions) -> DownloadTask {
+    task.options = request_options(options);
+    task
+}
+
+pub fn merge_task_options(mut task: DownloadTask, stored: &DownloadTask) -> DownloadTask {
+    task.options = stored.options.clone();
+    task
+}
+
+pub fn merge_stored_options(task: DownloadTask, stored_tasks: &[DownloadTask]) -> DownloadTask {
+    stored_tasks
+        .iter()
+        .find(|stored| stored.id == task.id || stored.gid == task.gid)
+        .map(|stored| merge_task_options(task.clone(), stored))
+        .unwrap_or(task)
+}
+
 pub fn download_file_path_from_task(task: &DownloadTask) -> PathBuf {
     PathBuf::from(&task.save_dir).join(&task.file_name)
 }
@@ -328,6 +370,7 @@ mod tests {
                 split: 16,
                 max_connection_per_server: 16,
                 speed_limit: 0,
+                proxy_url: None,
             },
         }
     }
@@ -361,5 +404,54 @@ mod tests {
         delete_file_if_present(&file_path).unwrap();
 
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn request_options_preserve_split_and_proxy_metadata() {
+        let options = AddUriOptions {
+            dir: "D:\\Downloads".to_string(),
+            out: None,
+            split: "12".to_string(),
+            max_connection_per_server: "12".to_string(),
+            min_split_size: "1M".to_string(),
+            all_proxy: Some("http://127.0.0.1:7890".to_string()),
+            continue_download: "true".to_string(),
+        };
+
+        let task_options = request_options(&options);
+
+        assert_eq!(task_options.split, 12);
+        assert_eq!(task_options.max_connection_per_server, 12);
+        assert_eq!(
+            task_options.proxy_url,
+            Some("http://127.0.0.1:7890".to_string())
+        );
+    }
+
+    #[test]
+    fn merge_stored_options_keeps_user_download_settings() {
+        let stored = sample_task(PathBuf::from("D:\\Downloads"), "archive.zip");
+        let mut live = stored.clone();
+        live.options = DownloadTaskOptions {
+            split: 16,
+            max_connection_per_server: 16,
+            speed_limit: 0,
+            proxy_url: None,
+        };
+        let mut stored_with_options = stored.clone();
+        stored_with_options.options = DownloadTaskOptions {
+            split: 6,
+            max_connection_per_server: 6,
+            speed_limit: 0,
+            proxy_url: Some("http://127.0.0.1:7890".to_string()),
+        };
+
+        let merged = merge_stored_options(live, &[stored_with_options]);
+
+        assert_eq!(merged.options.split, 6);
+        assert_eq!(
+            merged.options.proxy_url,
+            Some("http://127.0.0.1:7890".to_string())
+        );
     }
 }

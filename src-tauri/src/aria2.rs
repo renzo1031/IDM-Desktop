@@ -39,6 +39,8 @@ pub struct AddUriOptions {
     pub split: String,
     pub max_connection_per_server: String,
     pub min_split_size: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub all_proxy: Option<String>,
     #[serde(rename = "continue")]
     pub continue_download: String,
 }
@@ -153,6 +155,7 @@ pub fn add_uri_options(
     save_dir: impl Into<String>,
     file_name: Option<String>,
     split: u32,
+    proxy_url: Option<String>,
     config: &Aria2Config,
 ) -> AddUriOptions {
     let safe_split = split.clamp(1, 32);
@@ -163,6 +166,7 @@ pub fn add_uri_options(
         split: safe_split.to_string(),
         max_connection_per_server: config.max_connection_per_server.to_string(),
         min_split_size: config.min_split_size.clone(),
+        all_proxy: proxy_url,
         continue_download: "true".to_string(),
     }
 }
@@ -348,6 +352,7 @@ impl Aria2TaskStatus {
                 split: 16,
                 max_connection_per_server: 16,
                 speed_limit: 0,
+                proxy_url: None,
             },
         }
     }
@@ -371,6 +376,7 @@ mod tests {
             "D:\\Downloads",
             Some("file.iso".to_string()),
             64,
+            None,
             &config,
         );
 
@@ -382,9 +388,26 @@ mod tests {
     }
 
     #[test]
+    fn add_uri_options_include_proxy_when_configured() {
+        let config = Aria2Config::default();
+        let options = add_uri_options(
+            "D:\\Downloads",
+            None,
+            8,
+            Some("http://127.0.0.1:7890".to_string()),
+            &config,
+        );
+
+        let value = serde_json::to_value(options).unwrap();
+
+        assert_eq!(value["allProxy"], "http://127.0.0.1:7890");
+        assert_eq!(value["continue"], "true");
+    }
+
+    #[test]
     fn add_uri_payload_uses_token_and_aria2_method() {
         let config = Aria2Config::default();
-        let options = add_uri_options("D:\\Downloads", None, 16, &config);
+        let options = add_uri_options("D:\\Downloads", None, 16, None, &config);
         let payload = build_add_uri_payload("https://example.com/file.zip", &options, &config);
 
         assert_eq!(payload["method"], "aria2.addUri");
