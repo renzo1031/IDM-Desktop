@@ -1580,7 +1580,6 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
               <div className="dialog-title">
                 <div>
                   <strong>新建下载任务</strong>
-                  <span>粘贴链接，确认目录，然后开始下载。</span>
                 </div>
                 <button
                   aria-label="关闭新建任务"

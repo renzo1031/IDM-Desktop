@@ -209,6 +209,9 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "新建任务" }));
     const dialog = screen.getByRole("dialog", { name: "新建下载任务" });
+    expect(
+      within(dialog).queryByText("粘贴链接，确认目录，然后开始下载。"),
+    ).not.toBeInTheDocument();
     await user.type(within(dialog).getByLabelText("下载链接"), createdTask.url);
     await user.click(within(dialog).getByRole("button", { name: "开始下载" }));
 
@@ -339,6 +342,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "新建任务" }));
     const dialog = screen.getByRole("dialog", { name: "新建下载任务" });
     await user.type(within(dialog).getByLabelText("下载链接"), createdTask.url);
+    expect(await within(dialog).findByText("file.zip")).toBeInTheDocument();
     await user.clear(within(dialog).getByLabelText("保存目录"));
     await user.type(within(dialog).getByLabelText("保存目录"), "F:\\Downloads\\Single");
     await user.click(within(dialog).getByRole("radio", { name: "64" }));
