@@ -217,6 +217,37 @@ button {
   overflow: hidden;
 }
 
+.inline-error,
+.empty-state {
+  margin: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.inline-error {
+  color: #8a2d2d;
+  background: #f9e8e8;
+}
+
+.empty-state,
+.details-empty {
+  color: #6b7987;
+}
+
+.details-empty {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px dashed #cbd5df;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.details-empty p {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
 .task-row {
   width: 100%;
   min-width: 0;

@@ -2,6 +2,7 @@ mod aria2;
 mod commands;
 mod models;
 mod services;
+mod store;
 
 #[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

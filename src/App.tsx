@@ -126,11 +126,15 @@ function progressOf(task: DownloadTask): number {
   return Math.min(100, Math.round((task.completedBytes / task.totalBytes) * 100));
 }
 
-function App() {
+interface AppProps {
+  initialTasks?: DownloadTask[];
+}
+
+function App({ initialTasks = sampleTasks }: AppProps) {
   const [category, setCategory] = useState<TaskCategory>("all");
   const [url, setUrl] = useState("");
-  const [tasksState, setTasksState] = useState<DownloadTask[]>(sampleTasks);
-  const [selectedTaskId, setSelectedTaskId] = useState("1");
+  const [tasksState, setTasksState] = useState<DownloadTask[]>(initialTasks);
+  const [selectedTaskId, setSelectedTaskId] = useState(initialTasks[0]?.id ?? "");
   const [appStatus, setAppStatus] = useState<AppStatus>(initialAppStatus);
   const [errorMessage, setErrorMessage] = useState("");
   const counts = useMemo(() => getTaskCounts(tasksState), [tasksState]);
@@ -139,9 +143,10 @@ function App() {
     () => tasksState.reduce((sum, task) => sum + task.downloadSpeed, 0),
     [tasksState],
   );
-  const selectedTask =
-    tasksState.find((task) => task.id === selectedTaskId) ?? tasksState[0];
-  const remainingBytes = selectedTask.totalBytes - selectedTask.completedBytes;
+  const selectedTask = tasksState.find((task) => task.id === selectedTaskId) ?? tasksState[0];
+  const remainingBytes = selectedTask
+    ? selectedTask.totalBytes - selectedTask.completedBytes
+    : 0;
 
   useEffect(() => {
     let alive = true;
@@ -316,6 +321,7 @@ function App() {
             </div>
             <div className="task-list">
               {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
+              {tasks.length === 0 ? <div className="empty-state">暂无任务</div> : null}
               {tasks.map((task) => {
                 const progress = progressOf(task);
                 const remaining = task.totalBytes - task.completedBytes;
@@ -351,7 +357,9 @@ function App() {
 
           <aside className="details-panel" aria-label="任务详情面板">
             <p className="section-label">任务详情</p>
-            <h2>{selectedTask.fileName}</h2>
+            {selectedTask ? (
+              <>
+                <h2>{selectedTask.fileName}</h2>
             <div className="progress-track">
               <span style={{ width: `${progressOf(selectedTask)}%` }} />
             </div>
@@ -411,6 +419,13 @@ function App() {
                 删除
               </button>
             </div>
+              </>
+            ) : (
+              <div className="details-empty">
+                <h2>等待新建下载任务</h2>
+                <p>输入 HTTP/HTTPS 链接后，任务会显示在这里。</p>
+              </div>
+            )}
           </aside>
         </div>
 

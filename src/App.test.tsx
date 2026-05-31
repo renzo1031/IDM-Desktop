@@ -86,4 +86,13 @@ describe("App", () => {
 
     expect(pauseDownload).toHaveBeenCalledWith("9bfa1a");
   });
+
+  it("keeps the shell usable when there are no restored downloads", async () => {
+    vi.mocked(listDownloads).mockResolvedValue([]);
+
+    render(<App initialTasks={[]} />);
+
+    expect(await screen.findByText("暂无任务")).toBeInTheDocument();
+    expect(screen.getByText("等待新建下载任务")).toBeInTheDocument();
+  });
 });

@@ -3,6 +3,7 @@ use crate::aria2::{
     build_tell_status_payload, prepare_launch_plan, AddUriOptions, Aria2Config, Aria2TaskStatus,
 };
 use crate::models::DownloadTask;
+use crate::store::TaskStore;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -25,6 +26,7 @@ struct DownloadServiceInner {
     resource_dir: PathBuf,
     app_data_dir: PathBuf,
     default_download_dir: PathBuf,
+    store: TaskStore,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +42,7 @@ struct RpcError {
 
 impl DownloadService {
     pub fn new(resource_dir: PathBuf, app_data_dir: PathBuf, default_download_dir: PathBuf) -> Self {
+        let store = TaskStore::new(app_data_dir.join("tasks.json"));
         Self {
             inner: Arc::new(DownloadServiceInner {
                 client: Client::new(),
@@ -48,6 +51,7 @@ impl DownloadService {
                 resource_dir,
                 app_data_dir,
                 default_download_dir,
+                store,
             }),
         }
     }
@@ -92,11 +96,22 @@ impl DownloadService {
     pub async fn add_uri(&self, url: &str, options: &AddUriOptions) -> Result<String, String> {
         self.ensure_started().await?;
         let payload = build_add_uri_payload(url, options, &self.inner.config);
-        self.rpc::<String>(payload).await
+        let gid = self.rpc::<String>(payload).await?;
+        if let Ok(task) = self.tell_status(&gid).await {
+            self.inner.store.upsert(task)?;
+        }
+        Ok(gid)
     }
 
     pub async fn list_downloads(&self) -> Result<Vec<DownloadTask>, String> {
-        self.ensure_started().await?;
+        let stored_tasks = self.inner.store.load_all()?;
+        if let Err(err) = self.ensure_started().await {
+            if stored_tasks.is_empty() {
+                return Err(err);
+            }
+            return Ok(stored_tasks);
+        }
+
         let mut tasks = Vec::new();
 
         for payload in [
@@ -106,6 +121,16 @@ impl DownloadService {
         ] {
             let statuses = self.rpc::<Vec<Aria2TaskStatus>>(payload).await?;
             tasks.extend(statuses.into_iter().map(Aria2TaskStatus::into_download_task));
+        }
+
+        for task in &tasks {
+            self.inner.store.upsert(task.clone())?;
+        }
+
+        for stored_task in stored_tasks {
+            if !tasks.iter().any(|task| task.id == stored_task.id) {
+                tasks.push(stored_task);
+            }
         }
 
         Ok(tasks)
@@ -128,8 +153,8 @@ impl DownloadService {
     pub async fn remove(&self, gid: &str) -> Result<(), String> {
         self.ensure_started().await?;
         self.rpc::<String>(build_remove_payload(gid, &self.inner.config))
-            .await
-            .map(|_| ())
+            .await?;
+        self.inner.store.remove(gid)
     }
 
     pub async fn tell_status(&self, gid: &str) -> Result<DownloadTask, String> {
