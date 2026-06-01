@@ -905,7 +905,7 @@ function App({ initialTasks = [], pollIntervalMs = 1500 }: AppProps) {
               alt=""
               aria-hidden="true"
               className="brand-logo"
-              src="/logo-512.png"
+              src="/logo.svg"
             />
             <span>IDM Desktop</span>
           </div>

@@ -1,38 +1,56 @@
 <p align="center">
-  <h1 align="center">IDM Desktop</h1>
-  <p align="center">
-    一个内置 aria2 的紧凑型桌面下载管理器。
-  </p>
-  <p align="center">
-    <strong>粘贴链接。选择目录。开始下载。</strong>
-  </p>
-  <p align="center">
-    <a href="#快速开始">快速开始</a>
-    ·
-    <a href="#功能特性">功能特性</a>
-    ·
-    <a href="#路线图">路线图</a>
-    ·
-    <a href="#开发">开发</a>
-  </p>
-  <p align="center">
-    <img src="https://img.shields.io/badge/status-preview-2569D6?style=flat-square" alt="状态" />
-    <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square" alt="平台" />
-    <img src="https://img.shields.io/badge/Tauri-2.x-24C8DB?style=flat-square" alt="Tauri" />
-    <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square" alt="React" />
-    <img src="https://img.shields.io/badge/Rust-backend-000000?style=flat-square" alt="Rust" />
-    <img src="https://img.shields.io/badge/aria2-bundled-2569D6?style=flat-square" alt="aria2" />
-    <img src="https://img.shields.io/badge/QQ-1852568062-12B7F5?style=flat-square&logo=tencentqq&logoColor=white" alt="QQ" />
-    <a href="mailto:1852568062@qq.com">
-      <img src="https://img.shields.io/badge/1852568062%40qq.com-D14836?style=flat-square&logo=gmail&logoColor=white" alt="QQ 邮箱" />
-    </a>
-  </p>
-  <p align="center">
-    <img src="docs/assets/idm-desktop-preview.png" alt="IDM Desktop 界面预览" />
-  </p>
+  <img src="public/logo.svg" width="96" alt="IDM Desktop Logo" />
+</p>
+
+<h1 align="center">IDM Desktop</h1>
+
+<p align="center">
+  一个内置 aria2 的紧凑型桌面下载管理器。
+</p>
+
+<p align="center">
+  <strong>粘贴链接。选择目录。开始下载。</strong>
+</p>
+
+<p align="center">
+  <a href="#下载安装">下载安装</a>
+  ·
+  <a href="#功能特性">功能特性</a>
+  ·
+  <a href="#界面预览">界面预览</a>
+  ·
+  <a href="#开发">开发</a>
+  ·
+  <a href="#开源声明">开源声明</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/status-preview-2569D6?style=flat-square" alt="状态" />
+  <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square" alt="平台" />
+  <img src="https://img.shields.io/badge/Tauri-2.x-24C8DB?style=flat-square" alt="Tauri" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square" alt="React" />
+  <img src="https://img.shields.io/badge/Rust-backend-000000?style=flat-square" alt="Rust" />
+  <img src="https://img.shields.io/badge/aria2-bundled-2569D6?style=flat-square" alt="aria2" />
+  <img src="https://img.shields.io/badge/QQ-1852568062-12B7F5?style=flat-square&logo=tencentqq&logoColor=white" alt="QQ" />
+  <a href="mailto:1852568062@qq.com">
+    <img src="https://img.shields.io/badge/1852568062%40qq.com-D14836?style=flat-square&logo=gmail&logoColor=white" alt="QQ 邮箱" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-111827?style=flat-square" alt="MIT License" />
+  </a>
 </p>
 
 ---
+
+## 下载安装
+
+Windows 安装包可在 GitHub Release 下载：
+
+- [下载最新版本](https://github.com/renzo1031/idm-desktop/releases/latest)
+- 当前预览版本：`v0.1.0`
+- 安装包名称：`IDM.Desktop_0.1.0_x64-setup.exe`
+
+> 项目仍在快速迭代中，建议优先下载 Release 页面中的最新安装包。
 
 ## 为什么做这个项目
 
@@ -59,17 +77,14 @@
 - 支持任务属性弹窗
 - 支持打开文件和打开所在目录
 - 删除任务时可选择“仅删除任务”或“删除任务和文件”
+- 支持浅色、深色和跟随系统主题
+- 支持自定义主题色
 
-## 快速开始
+## 界面预览
 
-```powershell
-git clone https://github.com/renzo1031/idm-desktop.git
-cd idm-desktop
-npm install
-npm run tauri dev
-```
-
-> 当前项目仍处于预览阶段，正式安装包会在后续版本补充。
+<p align="center">
+  <img src="docs/assets/idm-desktop-preview.png" alt="IDM Desktop 界面预览" />
+</p>
 
 ## 使用方式
 
@@ -90,14 +105,22 @@ npm run tauri dev
 - [x] 下载队列与批量控制
 - [x] 新建任务前文件信息预解析
 - [x] 代理设置
+- [x] 浅色、深色和跟随系统主题
 - [ ] 剪贴板链接监听
 - [ ] 浏览器下载接管
 - [ ] BT 与磁力链任务
 - [ ] 下载计划、限速时段和队列优先级
-- [ ] 全新的 UI 视觉系统
-- [ ] 正式发布安装包
 
 ## 开发
+
+```powershell
+git clone https://github.com/renzo1031/idm-desktop.git
+cd idm-desktop
+npm install
+npm run tauri dev
+```
+
+常用命令：
 
 ```powershell
 npm run dev
@@ -127,6 +150,18 @@ src-tauri/resources/aria2/aria2c.exe
 
 ```powershell
 .\src-tauri\resources\aria2\aria2c.exe --version
+```
+
+## 开源声明
+
+本项目源码以 [MIT License](LICENSE) 开源。你可以自由使用、复制、修改、合并、发布和分发本项目代码，但需要保留原始版权声明和许可证声明。
+
+IDM Desktop 的名称、界面素材和 Logo 随项目一同提供，用于本项目展示、分发、二次开发和衍生版本说明。请不要将 Logo 或项目名称用于误导性宣传、冒充原作者发布，或暗示未经授权的官方背书。
+
+Logo 源文件位于：
+
+```text
+public/logo.svg
 ```
 
 ## 联系
