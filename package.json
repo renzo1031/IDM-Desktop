@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
+    "verify:bundle": "node scripts/verify-tauri-bundle.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -46,7 +46,7 @@
 
 Windows 安装包可在 GitHub Release 下载：
 
-- [下载最新版本](https://github.com/renzo1031/idm-desktop/releases/latest)
+- [下载最新版本](https://github.com/renzo1031/IDM-Desktop/releases/latest)
 - 当前预览版本：`v0.1.0`
 - 安装包名称：`IDM.Desktop_0.1.0_x64-setup.exe`
 
@@ -114,8 +114,8 @@ Windows 安装包可在 GitHub Release 下载：
 ## 开发
 
 ```powershell
-git clone https://github.com/renzo1031/idm-desktop.git
-cd idm-desktop
+git clone https://github.com/renzo1031/IDM-Desktop.git
+cd IDM-Desktop
 npm install
 npm run tauri dev
 ```
