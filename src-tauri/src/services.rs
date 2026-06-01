@@ -18,6 +18,9 @@ use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Clone)]
 pub struct DownloadService {
     inner: Arc<DownloadServiceInner>,
@@ -79,6 +82,7 @@ impl DownloadService {
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
+            hide_aria2_console_window(&mut command);
             *child_guard = Some(
                 command
                     .spawn()
@@ -388,6 +392,19 @@ impl DownloadService {
         })
     }
 }
+
+#[cfg(windows)]
+fn aria2_creation_flags() -> u32 {
+    CREATE_NO_WINDOW
+}
+
+#[cfg(windows)]
+fn hide_aria2_console_window(command: &mut Command) {
+    command.creation_flags(aria2_creation_flags());
+}
+
+#[cfg(not(windows))]
+fn hide_aria2_console_window(_command: &mut Command) {}
 
 pub fn request_options(options: &AddUriOptions) -> DownloadTaskOptions {
     let split = options.split.parse::<u32>().unwrap_or(16);
@@ -789,6 +806,15 @@ mod tests {
         assert_eq!(
             rebound.options.proxy_url,
             Some("http://127.0.0.1:7890".to_string())
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn aria2_process_is_started_without_a_console_window() {
+        assert_eq!(
+            aria2_creation_flags() & CREATE_NO_WINDOW,
+            CREATE_NO_WINDOW
         );
     }
 }
